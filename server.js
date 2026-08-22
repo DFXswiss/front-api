@@ -624,7 +624,7 @@ server.on('upgrade', (req, socket, head) => {
 
 if (require.main === module) {
   server.listen(PORT, BIND, () => {
-    console.log(`front-api listening on ${BIND}:${PORT} -> ${BACKEND}` + (pool ? ' db-read on' : ''));
+    console.log(`front-api listening on ${BIND}:${PORT}` + (pool ? ' db-read on' : ''));
     refreshSwagger();
     setInterval(refreshSwagger, 10 * 60 * 1000).unref();
     // Off by default.
