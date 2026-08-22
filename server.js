@@ -280,6 +280,7 @@ async function refreshQuoteBook() {
             body,
             { sourceAsset: { name: swapSrc.name }, targetAsset: { id: swapDst.id }, amount: 0.01 },
             { sourceAsset: { id: swapSrc.id }, targetAsset: { name: swapDst.name }, amount: 0.01 },
+            { sourceAsset: { name: swapSrc.name }, targetAsset: { name: swapDst.name }, amount: 0.01 },
           ]);
         }
       } catch (err) {
