@@ -16,10 +16,10 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 15000), `CA
 
 - `GET /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`)
 - `GET /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json` — filtered swagger snapshot from the backend; empty snapshot returns 503
-- Short-TTL GET/HEAD cache (default 15s) for public list prefixes: `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`)
+- Short-TTL GET/HEAD cache (default 15s) for `/` and the public list prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`)
 - Optional Postgres reads for `GET /v1/country` and `GET /v1/language` when `SQL_HOST` is set
 
-Only fresh cache hits are served. After the TTL a new fetch is made. If the backend is down, the response is always 503 — never an old cached body.
+Only fresh cache hits are served. After the TTL the next request fetches again. If that fetch cannot reach the backend, the response is 503 — never an expired cache body. A still-fresh cache hit is served without calling the backend.
 
 Everything else, including quotes, is reverse-proxied to `BACKEND_URL`. WebSocket upgrades are tunnelled the same way.
 

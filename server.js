@@ -100,19 +100,15 @@ function attachRequestTimeout(req, ms, onTimeout) {
   req.setTimeout(ms, onTimeout);
 }
 
-function httpJson(method, urlPath, body) {
+function getBackendJson(urlPath) {
   return new Promise((resolve, reject) => {
     const target = new URL(BACKEND);
-    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
     const req = http.request(
       {
         hostname: target.hostname,
         port: backendPortFor(target),
         path: urlPath,
-        method,
-        headers: payload
-          ? { 'content-type': 'application/json', 'content-length': payload.length }
-          : {},
+        method: 'GET',
       },
       (resp) => {
         const chunks = [];
@@ -132,7 +128,6 @@ function httpJson(method, urlPath, body) {
       req.destroy();
       reject(new Error('timeout'));
     });
-    if (payload) req.write(payload);
     req.end();
   });
 }
@@ -156,7 +151,7 @@ function isServedPath(path) {
 
 async function refreshSwagger() {
   try {
-    const got = await httpJson('GET', '/swagger-json');
+    const got = await getBackendJson('/swagger-json');
     if (!got.json || !got.json.paths) return;
     const paths = {};
     for (const [p, ops] of Object.entries(got.json.paths)) {
