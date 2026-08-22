@@ -40,6 +40,7 @@ grep -q 'Missing pull_request head metadata' "$wf" || fail "empty_meta: refusal 
 grep -q 'z "$HEAD_REF"' "$wf" || fail "empty_meta: HEAD_REF empty check missing"
 grep -q 'z "$HEAD_REPO"' "$wf" || fail "empty_meta: HEAD_REPO empty check missing"
 grep -q 'z "$THIS_REPO"' "$wf" || fail "empty_meta: THIS_REPO empty check missing"
+grep -Fq 'z "$HEAD_REF" ] || [ -z "$HEAD_REPO" ] || [ -z "$THIS_REPO"' "$wf" || fail "empty_meta: empty checks must be OR-combined"
 grep -q 'HEAD_REPO" != "$THIS_REPO"' "$wf" || fail "fork_check: HEAD_REPO vs THIS_REPO missing"
 grep -q 'not a fork' "$wf" || fail "fork_check: fork error message missing"
 grep -q 'HEAD_REF" != "develop"' "$wf" || fail "develop_check: HEAD_REF vs develop missing"

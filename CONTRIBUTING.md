@@ -18,14 +18,16 @@ this file was applied fully and correctly.
 ## Build & Test
 
 The required suite is the GitHub Actions job `test`. It runs
-`bash test/test-server.sh` and `bash test/test-main-from-develop.sh`. Employees
-are not required to run it locally; those two commands are the local equivalent.
+`bash test/test-server.sh`, `bash test/test-main-from-develop.sh`, and
+`bash test/test-auto-release-pr.sh`. Employees are not required to run it
+locally; those three commands are the local equivalent.
 Draft pull requests still run `test`. This repository does not skip CI on
 drafts and has no `ci:full` label.
 
 ```bash
 bash test/test-server.sh
 bash test/test-main-from-develop.sh
+bash test/test-auto-release-pr.sh
 ```
 
 ## Git & PRs
@@ -85,9 +87,10 @@ When applicable, every pull request must include:
 1. **Environment / image / workflow updates** when boot or the image is
    affected (`BACKEND_URL`, `SQL_*`, `QUOTE_BOOK_REFRESH`, `CACHE_*`, `PORT`,
    `BIND`, Dockerfile, `.github/workflows`).
-2. **A pin** in `test/test-server.sh` (`server.js` behaviour) and/or
-   `test/test-main-from-develop.sh` (the main-source gate) for every behaviour
-   the pull request changes.
+2. **A pin** in `test/test-server.sh` (`server.js` behaviour),
+   `test/test-main-from-develop.sh` (the main-source gate), and/or
+   `test/test-auto-release-pr.sh` (the automatic release-PR body) for every
+   behaviour the pull request changes.
 3. **Swagger allowlist** update when the set of paths this process answers
    itself changes (`isServedPath`, `CACHE_PREFIXES`, RAM quote paths).
 4. **A note in the PR body** when the outward behaviour of this layer changes

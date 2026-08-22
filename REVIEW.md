@@ -48,8 +48,9 @@ repository hygiene rule in CONTRIBUTING.md.
 
 New or changed branches in `server.js` (503 vs 200, cache hit/miss, allowlist,
 timeout, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
-changes have a pin in `test/test-main-from-develop.sh`. Green CI without a pin
-for a behaviour change is fail.
+changes have a pin in `test/test-main-from-develop.sh`. Automatic release-PR
+body-form changes have a pin in `test/test-auto-release-pr.sh`. Green CI
+without a pin for a behaviour change is fail.
 
 ## 7. Secrets and boot config
 
