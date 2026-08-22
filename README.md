@@ -17,3 +17,7 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS`, `CACHE_MAX`, `SQL_H
 Push to `develop` publishes `dfxswiss/front-api:beta` and the git SHA. Push to `main` publishes `dfxswiss/front-api:latest` and the git SHA. After a successful push the workflow notifies the configured infrastructure repo (`DISPATCH_TOKEN` + `DISPATCH_REPO`). If those secrets are unset, the image is still published.
 
 This repository does not describe a particular deployment environment.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Reviewers follow [REVIEW.md](REVIEW.md).
