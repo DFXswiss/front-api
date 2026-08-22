@@ -2,12 +2,10 @@
 # Pin test + 100% coverage gate for production JS (c8).
 #
 # Arms:
-#   RAM miss → 503                                   ram_miss
-#   RAM stale (older than QUOTE_TTL_MS) → 503        ram_stale
-#   RAM fresh → 200                                  ram_fresh
 #   swagger snapshot empty → 503 local body          swagger_empty
+#   PUT /v1/buy/quote → 503 backend unavailable      quote_proxy
 #   attachRequestTimeout → callback + destroy        proxy_timeout
-#   poller default off (QUOTE_BOOK_REFRESH!==1)      poller_off
+#   no in-memory quotes / stale cache                quotes_gone
 #   c8 100% lines/functions/branches/statements      coverage_100
 #   c8 --all includes every new production .js file  coverage_all
 set -euo pipefail
@@ -25,12 +23,18 @@ fail() {
 
 [ -f "$server_js" ] || fail "missing: $server_js"
 [ -f "$test_js" ] || fail "missing: $test_js"
-grep -q "QUOTE_BOOK_REFRESH === '1'" "$server_js" || fail "poller_off: gate missing"
-grep -q 'refreshQuoteBook();' "$server_js" || fail "poller_off: refresh helper missing"
 grep -q 'function isServedPath' "$server_js" || fail "isServedPath missing"
 grep -q 'if (!isServedPath(p)) continue' "$server_js" || fail "swagger snapshot must allowlist served paths"
 if grep -q 'low.includes' "$server_js"; then
   fail "swagger snapshot must not denylist unserved routes"
+fi
+for banned in quoteBook refreshQuoteBook QUOTE_BOOK_REFRESH RAM_GET_PATHS scaleQuote isQuoteFresh pairKey rememberQuote EXACT_PUT_PATHS QUOTE_TTL_MS; do
+  if grep -q "$banned" "$server_js"; then
+    fail "server.js must not contain $banned"
+  fi
+done
+if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; then
+  fail "server.js must not serve stale cache"
 fi
 
 c8rc="$repo_root/.c8rc.json"
