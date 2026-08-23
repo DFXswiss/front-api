@@ -5,8 +5,8 @@
 # Arms:
 #   local one-command start (stub + process)          local_start
 #   swagger snapshot empty → 503 local body          swagger_empty
-#   PUT /v1/buy/quote → 503 not served               quote_proxy
-#   quotes must not be forwarded to the backend      quote_forward
+#   PUT /v1/buy/quote is forwarded                   quote_proxy
+#   quotes must reach the backend                    quote_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout → callback + destroy        proxy_timeout
@@ -72,29 +72,31 @@ grep -Fq 'REQUEST_TIMEOUT_MS = outboundTimeoutMs(' "$server_js" || fail "max_res
 grep -Fq 'if (!Number.isFinite(n) || n <= 0)' "$server_js" || fail "max_response_100: outbound timeout 0/NaN must not disable the cap"
 grep -q 'connectionTimeoutMillis: 90' "$server_js" || fail "max_response_100: pool acquire must not outlive the deadline"
 grep -Fq 'orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)' "$server_js" || fail "REQUEST_TIMEOUT_MS default cap"
-grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing"
+grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing on known routes"
+grep -q 'function isKnownLocalRequest' "$server_js" || fail "known_local: must distinguish known GET routes from unknown"
+if ! grep -q 'function proxy' "$server_js"; then
+  fail "unknown_forward: unknown requests must be forwarded"
+fi
+grep -q 'req.pipe' "$server_js" || fail "unknown_forward: must pipe unknown requests outbound"
+grep -q 'net.connect' "$server_js" || fail "unknown_forward: upgrades must be tunnelled"
 grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
 grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
 grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
 grep -Fq 'if (!canWrite(res)) return;' "$server_js" || fail "max_response_100: writers must refuse after the deadline"
 grep -Fq 'if (!res.destroyed) req.destroy();' "$server_js" || fail "max_response_100: deadline must cut an unfinished drain"
 grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 503 must close the connection"
-if grep -q 'function proxy' "$server_js"; then
-  fail "no_proxy: client requests must not be forwarded"
-fi
-if grep -q 'req.pipe' "$server_js"; then
-  fail "no_proxy: must not pipe the client request outbound"
-fi
-grep -q 'function rejectUnserved' "$server_js" || fail "no_proxy: uncached requests must 503 not served"
-grep -q 'refreshCache' "$server_js" || fail "no_proxy: GET cache must fill off the request path"
-grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "no_proxy: background refresh must include GET /"
-grep -q 'function cacheRefreshPaths' "$server_js" || fail "no_proxy: refresh set must include concrete swagger GET paths"
-grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "no_proxy: parameterized swagger paths must not be fetched"
-grep -Fq "req.method !== 'GET'" "$server_js" || fail "no_proxy: GET cache must not treat HEAD as cacheable"
-grep -Fq "(req.url ?? '/')" "$server_js" || fail "no_proxy: request path fallback must use ??"
-grep -Fq "forbidden** to forward" "$repo_root/CONTRIBUTING.md" || fail "no_proxy: CONTRIBUTING must forbid forwarding a client request"
-grep -q 'socket.destroy()' "$server_js" || fail "no_proxy: upgrades must not be tunnelled"
-grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms"
+grep -q 'function rejectUnserved' "$server_js" || fail "known_local: uncached known GETs must 503 not served"
+grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill off the request path"
+grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "known_local: background refresh must include GET /"
+grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: refresh set must include concrete swagger GET paths"
+grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "known_local: parameterized swagger paths must not be fetched"
+grep -Fq "req.method !== 'GET'" "$server_js" || fail "known_local: GET cache must not treat HEAD as cacheable"
+grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
+grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
+grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"
+grep -Fq "no** 100ms" "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must say forwarded requests have no 100ms rule"
+grep -q 'Unknown routes' "$repo_root/REVIEW.md" || fail "unknown_forward: REVIEW must require forwarding unknown routes"
+grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms on known routes"
 grep -q 'ERROR' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must require an ERROR log on a deadline miss"
 grep -q 'FRONT_API_EXIT_AFTER_BOOT=1' "$repo_root/test/run-main-coverage.sh" || fail "coverage_100: require.main collection missing"
 grep -q 'coverage:report' "$pkg" || fail "coverage_100: coverage:report script missing"

@@ -1,6 +1,6 @@
 # front-api
 
-Public HTTP layer in front of the DFX backend. This process answers a fixed set of routes itself (`/version`, a filtered swagger snapshot, GET cache, optional Postgres reads for country/language). It never forwards a client request to `BACKEND_URL`. Uncached or unknown requests return `503` `not served` immediately.
+Public HTTP layer in front of the DFX backend. Known routes (`/version`, a filtered swagger snapshot, GET cache, optional Postgres reads for country/language) are answered locally within 100ms and never wait on `BACKEND_URL`. Everything else is forwarded.
 
 ## Run
 
@@ -41,13 +41,17 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 - GET cache (default 5 minutes) for `/` and the public list prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested concrete swagger GET paths under those prefixes are filled in the background too. Parameterized paths and HEAD are not.
 - Optional Postgres reads for `GET /v1/country` and `GET /v1/language` when `SQL_HOST` is set
 
-Only fresh cache hits are served. The cache is filled in the background, not
-during a client request. After the TTL the next request is `503` `not served`
-until a background refresh succeeds — never an expired cache body, never a
-live backend wait. WebSocket upgrades are refused (`socket.destroy()`).
+Only fresh cache hits are served for known GETs. The cache is filled in the
+background, not during a client request. After the TTL the next known GET
+is `503` `not served` until a background refresh succeeds — never an
+expired cache body, never a live backend wait on that request.
 
-Every HTTP response must finish within 100ms. Forwarding a client request to
-the backend is forbidden because that cannot guarantee 100ms. A slower
+Everything this process does not know (quotes, authenticated calls, other
+methods and paths, WebSocket upgrades) is forwarded to `BACKEND_URL` with
+no 100ms rule.
+
+Every **known** HTTP response must finish within 100ms. Forwarding a known
+route is forbidden because that cannot guarantee 100ms. A slower known
 response is a hard bug: the process answers `503` `response deadline
 exceeded`, emits an `ERROR` log, and CI fails.
 

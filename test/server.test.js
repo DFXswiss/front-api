@@ -3,6 +3,7 @@
 const http = require('http');
 const net = require('net');
 const path = require('path');
+const { Readable } = require('stream');
 const { EventEmitter } = require('events');
 const { spawn, spawnSync } = require('child_process');
 
@@ -200,6 +201,7 @@ async function main() {
         res.end('{"ok":false}');
       },
       '/v1/coin': { ok: 1 },
+      '/v1/user': { user: 1 },
     }, seen),
   );
   const bPort = await listen(backend);
@@ -218,6 +220,7 @@ async function main() {
     CACHE_PREFIXES,
     cache,
     isServedPath,
+    isKnownLocalRequest,
     isCacheable,
     cacheKey,
     refreshSwagger,
@@ -237,6 +240,7 @@ async function main() {
     refreshCache,
     cacheRefreshPaths,
     rejectUnserved,
+    proxy,
     onPoolConnect,
     canWrite,
     MAX_RESPONSE_MS,
@@ -286,6 +290,13 @@ async function main() {
   if (!isServedPath('/v1/asset/1') || !isServedPath(undefined)) fail('isServedPath');
   if (isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
   if (isServedPath('/v1/user')) fail('isServedPath user');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/version', headers: {} })) fail('known version');
+  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/buy/quote', headers: {} })) fail('unknown quote');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/user', headers: {} })) fail('unknown user');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('unknown auth GET');
+  if (isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('unknown HEAD');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
   if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD');
@@ -423,24 +434,67 @@ async function main() {
     rejectUnserved(blocked);
     const raceRes = fakeRes();
     rejectUnserved(raceRes);
+    proxy(
+      new Readable({
+        read() {
+          this.push(null);
+        },
+      }),
+      raceRes,
+    );
+    const livePipe = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    livePipe.method = 'GET';
+    livePipe.url = '/v1/user';
+    livePipe.headers = { host: '127.0.0.1' };
+    const liveRes = fakeRes();
+    proxy(livePipe, liveRes);
+    const noUrlProxy = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    noUrlProxy.method = 'GET';
+    noUrlProxy.url = undefined;
+    noUrlProxy.headers = { host: '127.0.0.1' };
+    const noUrlProxyRes = fakeRes();
+    proxy(noUrlProxy, noUrlProxyRes);
+    const raced = fakeRes();
+    const racedReq = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    racedReq.method = 'GET';
+    racedReq.url = '/v1/user';
+    racedReq.headers = { host: '127.0.0.1' };
+    proxy(racedReq, raced);
+    raced.headersSent = true;
+    raced.writableEnded = true;
+    await sleep(50);
 
     const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
     let got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('quote_proxy buy body');
+    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy buy body');
     got = await request(port, 'PUT', '/v1/sell/quote', buyBody);
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('quote_proxy sell body');
+    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy sell body');
     const swapBody = { sourceAsset: { id: 1 }, targetAsset: { id: 2 }, amount: 0.01 };
     got = await request(port, 'PUT', '/v1/swap/quote', swapBody);
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('quote_proxy swap body');
+    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy swap body');
     got = await request(port, 'GET', '/v1/realunit/quote/price');
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('quote_proxy realunit');
+    if (got.status !== 200 || got.body.indexOf('price') < 0) fail('quote_proxy realunit');
+    got = await request(port, 'GET', '/v1/user');
+    if (got.status !== 200 || got.body.indexOf('user') < 0) fail('unknown GET must be forwarded');
 
     const forwarded = seen.filter((row) =>
       (row.method === 'PUT' &&
         (row.path === '/v1/buy/quote' || row.path === '/v1/sell/quote' || row.path === '/v1/swap/quote')) ||
-      (row.method === 'GET' && row.path === '/v1/realunit/quote/price'),
+      (row.method === 'GET' && (row.path === '/v1/realunit/quote/price' || row.path === '/v1/user')),
     );
-    if (forwarded.length !== 0) fail('quote_forward: quotes must not reach the backend');
+    if (forwarded.length < 4) fail('quote_forward: unknown routes must reach the backend');
 
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
@@ -510,7 +564,7 @@ async function main() {
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db catch must not proxy');
     setPool(null);
     got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db skip auth');
+    if (got.body.indexOf('not served') >= 0) fail('auth GET must be forwarded');
 
     await new Promise((resolve, reject) => {
       const held = [];
@@ -532,15 +586,25 @@ async function main() {
       hanging.on('error', reject);
     });
 
-    const upSock = new net.Socket();
-    let upDestroyed = false;
-    upSock.destroy = function destroy() {
-      upDestroyed = true;
-      net.Socket.prototype.destroy.call(this);
-    };
-    server.emit('upgrade', { method: 'GET', url: '/socket' }, upSock);
-    if (!upDestroyed && !upSock.destroyed) fail('upgrade must not tunnel');
-    upSock.destroy();
+    const upClient = new net.Socket();
+    server.emit(
+      'upgrade',
+      {
+        method: 'GET',
+        url: '/socket',
+        httpVersion: '1.1',
+        headers: { host: '127.0.0.1', 'x-empty': undefined, 'x-list': ['a', 'b'] },
+      },
+      upClient,
+      Buffer.from('extra'),
+    );
+    await sleep(50);
+    upClient.emit('error', new Error('upgrade client'));
+    upClient.destroy();
+    const deadUp = new net.Socket();
+    deadUp.destroy();
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, deadUp, Buffer.alloc(0));
+    await sleep(50);
 
     const sent = fakeRes();
     sent.headersSent = true;
@@ -565,8 +629,8 @@ async function main() {
     got = await request(port, 'GET', '/v1/asset?x=1');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
     got = await request(port, 'HEAD', '/v1/asset');
-    if (got.status !== 503) fail('HEAD must not be served from GET cache');
     if (got.headers['x-front-api'] === 'hit') fail('HEAD must not be a GET cache hit');
+    if (got.body.indexOf('not served') >= 0) fail('HEAD must be forwarded');
     got = await request(port, 'GET', '/v1/asset');
     if (got.status !== 200 || got.body.indexOf('BTC') < 0) fail('ttl_expire: prime');
     got = await request(port, 'GET', '/v1/asset');
@@ -579,10 +643,27 @@ async function main() {
     if (got.body.indexOf('not served') < 0) fail('ttl_expire: expected not served');
     if (got.body.indexOf('BTC') >= 0) fail('ttl_expire: must not replay expired cache body');
     rejectUnserved(fakeRes());
+    const blockedProxy = fakeRes();
+    blockedProxy.headersSent = true;
+    proxy({ method: 'GET', url: '/v1/user', headers: {}, pipe() {} }, blockedProxy);
     got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
     if (got.status !== 503) fail('quote_proxy dead backend');
-    if (!got.body.includes('not served')) fail('quote_proxy dead body');
+    if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
     if (got.body.includes('quote unavailable')) fail('quote_proxy must not say quote unavailable');
+    if (got.body.includes('not served')) fail('unknown dead backend must still be forwarded');
+    const late = fakeRes();
+    const lateReq = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    lateReq.method = 'GET';
+    lateReq.url = '/v1/user';
+    lateReq.headers = {};
+    proxy(lateReq, late);
+    late.headersSent = true;
+    late.writableEnded = true;
+    await sleep(50);
     cache.clear();
     putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"stale":true}'));
     cache.get('GET /v1/statistic').exp = Date.now() - 1;

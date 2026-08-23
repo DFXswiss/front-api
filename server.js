@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const net = require('net');
 const { URL } = require('url');
 
 function orFallback(value, fallback) {
@@ -213,6 +214,23 @@ function isServedPath(path) {
   return CACHE_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
 }
 
+function isKnownLocalRequest(req) {
+  if (req.method !== 'GET') return false;
+  const path = (req.url ?? '/').split('?')[0];
+  if (
+    path === '/version' ||
+    path === '/swagger' ||
+    path === '/swagger/' ||
+    path === '/swagger-ui' ||
+    path === '/swagger-ui/' ||
+    path === '/swagger-json' ||
+    path === '/swagger-json/'
+  ) {
+    return true;
+  }
+  return isCacheable(req);
+}
+
 async function refreshSwagger() {
   try {
     const got = await getBackendJson('/swagger-json');
@@ -354,6 +372,42 @@ function rejectUnserved(res) {
   });
 }
 
+function proxy(req, res) {
+  if (!canWrite(res)) return;
+  const target = new URL(BACKEND);
+  const opts = {
+    hostname: target.hostname,
+    port: backendPortFor(target),
+    path: req.url ?? '/',
+    method: req.method,
+    headers: { ...req.headers, host: target.host },
+  };
+  const p = http.request(opts, (up) => {
+    const chunks = [];
+    up.on('data', (c) => chunks.push(c));
+    up.on('end', () => {
+      if (!canWrite(res)) return;
+      const body = Buffer.concat(chunks);
+      const headers = { ...up.headers };
+      delete headers['transfer-encoding'];
+      res.writeHead(up.statusCode, headers);
+      res.end(body);
+    });
+  });
+  p.on('error', (err) => {
+    console.error('proxy error', err.message);
+    if (!canWrite(res)) return;
+    res.writeHead(503, {
+      'content-type': 'application/json',
+      'retry-after': '30',
+      'access-control-allow-origin': '*',
+    });
+    res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
+  });
+  res.on('finish', () => p.destroy());
+  req.pipe(p);
+}
+
 function cacheRefreshPaths() {
   const out = new Set(['/', ...CACHE_PREFIXES]);
   const spec = swaggerSpec;
@@ -383,6 +437,10 @@ async function refreshCache() {
 }
 
 const server = http.createServer((req, res) => {
+  if (!isKnownLocalRequest(req)) {
+    proxy(req, res);
+    return;
+  }
   attachResponseBudget(req, res);
   const path = (req.url ?? '/').split('?')[0];
   if (path === '/version' && req.method === 'GET') {
@@ -412,7 +470,7 @@ const server = http.createServer((req, res) => {
   }
 
   const key = cacheKey(req);
-  const hit = isCacheable(req) ? getCached(key) : null;
+  const hit = getCached(key);
   if (hit && Date.now() <= hit.exp) {
     if (!canWrite(res)) return;
     const headers = { ...hit.headers, 'x-front-api': 'hit' };
@@ -441,8 +499,31 @@ const server = http.createServer((req, res) => {
   rejectUnserved(res);
 });
 
-server.on('upgrade', (_req, socket) => {
-  socket.destroy();
+server.on('upgrade', (req, socket, head) => {
+  const target = new URL(BACKEND);
+  const port = backendPortFor(target);
+  const up = net.connect(port, target.hostname, () => {
+    if (socket.destroyed) {
+      up.destroy();
+      return;
+    }
+    const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
+    const headers = { ...req.headers, host: target.host };
+    for (const [k, v] of Object.entries(headers)) {
+      if (v === undefined) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) lines.push(`${k}: ${item}`);
+      } else {
+        lines.push(`${k}: ${v}`);
+      }
+    }
+    up.write(lines.join('\r\n') + '\r\n\r\n');
+    if (head && head.length) up.write(head);
+    up.pipe(socket);
+    socket.pipe(up);
+  });
+  up.on('error', () => socket.destroy());
+  socket.on('error', () => up.destroy());
 });
 
 function boot() {
@@ -492,12 +573,14 @@ module.exports = {
   EXACT_GET_PATHS,
   cache,
   isServedPath,
+  isKnownLocalRequest,
   isCacheable,
   cacheKey,
   refreshSwagger,
   refreshCache,
   cacheRefreshPaths,
   rejectUnserved,
+  proxy,
   swaggerHtml,
   countryDto,
   languageDto,

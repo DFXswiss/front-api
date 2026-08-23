@@ -126,8 +126,8 @@ When applicable, every pull request must include:
    default branch. An `unidentified` row is catalog-complete for CI and is
    **not** a grant to change that path. Private repositories are not named.
 5. **A note in the PR body** when the outward behaviour of this layer changes
-   (cache, 503 bodies, `x-front-api`, which paths are answered here, quote
-   source). Do not name private repositories. Public consumer
+   (cache, 503 bodies, `x-front-api`, which paths are answered here versus
+   forwarded, quote source). Do not name private repositories. Public consumer
    paths belong in `offered-routes.json`.
 
 Missing any applicable item = changes requested.
@@ -151,25 +151,32 @@ Missing any applicable item = changes requested.
 ## This process
 
 - This process answers a **fixed** set of routes itself from local state
-  (version, swagger snapshot, fresh GET cache, optional Postgres). It is
-  **forbidden** to forward a client request to `BACKEND_URL`. A live wait on
-  the backend cannot guarantee 100ms. Uncached or unknown requests return
-  `503` `not served` immediately.
-- The backend is contacted only **off the request path** (swagger snapshot
-  and GET-cache refresh). Quotes are not served here. WebSocket upgrades
-  are refused immediately (`socket.destroy()`), never tunnelled.
+  (version, swagger snapshot, fresh GET cache, optional Postgres). Those
+  **known** routes must finish within **100ms**. It is **forbidden** to
+  satisfy them by waiting on `BACKEND_URL` or any other system that cannot
+  guarantee 100ms. A cache miss on a known GET is `503` `not served`
+  immediately — never a live backend fetch on that request.
+- Every other request (routes this process does **not** know) is forwarded
+  to `BACKEND_URL`. Forwarded requests have **no** 100ms rule. Quotes and
+  WebSocket upgrades are unknown here and are forwarded.
+- The backend is contacted on the request path only for unknown routes.
+  Swagger snapshot and GET-cache refresh stay **off** the request path and
+  exist only to serve known GETs from local state.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
-- Authenticated requests are never answered from the GET cache.
+- Authenticated requests are never answered from the GET cache; they are
+  unknown to this layer and are forwarded.
 - Never serve an expired cache body.
-- Every HTTP response from this process must complete within **100ms**. That
-  bound is technical and always enforced, not a target. The process must cut
-  the request so the client never waits longer (`503` `response deadline
-  exceeded`) and must emit an `ERROR` log. It is **forbidden** to add code
-  that cannot finish in that budget: forwarding to the backend, unbounded
-  awaits, blocking work, uncapped outbound waits, sleeps, or any other path
-  that would let a ping exceed 100ms. `REQUEST_TIMEOUT_MS` may only lower
-  background outbound waits, never raise them above 100ms.
+- Every **known** HTTP response from this process must complete within
+  **100ms**. That bound is technical and always enforced, not a target. The
+  process must cut a known request so the client never waits longer (`503`
+  `response deadline exceeded`) and must emit an `ERROR` log. It is
+  **forbidden** to add code on a known route that cannot finish in that
+  budget: forwarding to the backend, unbounded awaits, blocking work,
+  uncapped outbound waits, sleeps, or any other path that would let a ping
+  of a known route exceed 100ms. `REQUEST_TIMEOUT_MS` may only lower
+  background outbound waits for cache/swagger refresh, never raise them
+  above 100ms. Do not attach that budget to forwarded unknown requests.
 - Do not expose internals in responses (SQL credentials, backend hosts, or
   other secrets).
 
@@ -200,11 +207,13 @@ if CI is green.
 There is no production JavaScript in this repository that may ship below 100%
 coverage. The coverage gate is the CI job, not a review courtesy.
 
-There is no HTTP response this process may take longer than 100ms to finish.
-`test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline, that
-client requests are not forwarded, the `ERROR` log, and the outbound cap; the
-Node suite rejects any helper round-trip over 100ms. A miss is a red `test`
-job, not a review note.
+There is no **known** HTTP response this process may take longer than 100ms
+to finish. Unknown requests are forwarded and are not in that budget.
+`test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline on
+known routes, that known routes are not forwarded, that unknown routes are
+forwarded, the `ERROR` log, and the background outbound cap. The Node suite
+rejects any **known-route** helper round-trip over 100ms. A miss is a red
+`test` job, not a review note.
 
 Every path this process answers itself also needs **frontend E2E** coverage:
 a real UI flow that hits that function, listed in `offered-routes.json`.
