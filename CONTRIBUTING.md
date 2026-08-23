@@ -96,7 +96,7 @@ details body. The `DE:` block is the German summary only.
 When applicable, every pull request must include:
 
 1. **Environment / image / workflow updates** when boot or the image is
-   affected (`BACKEND_URL`, `SQL_*`, `QUOTE_BOOK_REFRESH`, `CACHE_*`,
+   affected (`BACKEND_URL`, `SQL_*`, `CACHE_*`,
    `REQUEST_TIMEOUT_MS`, `FRONT_API_EXIT_AFTER_BOOT`, `PORT`, `BIND`,
    Dockerfile, `.github/workflows`).
 2. **A pin** in `test/test-server.sh` (`server.js` behaviour),
@@ -104,7 +104,7 @@ When applicable, every pull request must include:
    `test/test-auto-release-pr.sh` (the automatic release-PR body) for every
    behaviour the pull request changes.
 3. **Swagger allowlist** update when the set of paths this process answers
-   itself changes (`isServedPath`, `CACHE_PREFIXES`, RAM quote paths).
+   itself changes (`isServedPath`, `CACHE_PREFIXES`).
 4. **`offered-routes.json`** update for every path this process answers
    itself: a `usedIn` pointer (public consumer repo + file, or
    `unidentified: true` with a note) and an `e2e` pointer
@@ -144,7 +144,8 @@ Missing any applicable item = changes requested.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
 - Authenticated requests are never answered from the GET cache.
-- The quote poller is **off by default** (`QUOTE_BOOK_REFRESH=1` to enable).
+- Quotes are reverse-proxied to `BACKEND_URL`. This process does not keep a quote book.
+- A down backend always returns 503. Never serve an expired cache body.
 - Do not expose internals in responses (SQL credentials, backend hosts, or
   other secrets).
 
