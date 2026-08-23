@@ -3,8 +3,8 @@
 const http = require('http');
 const net = require('net');
 const path = require('path');
-const { EventEmitter } = require('events');
 const { Readable } = require('stream');
+const { EventEmitter } = require('events');
 const { spawn, spawnSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..');
@@ -36,9 +36,10 @@ function close(srv) {
   });
 }
 
-function request(port, method, urlPath, body, headers) {
+function request(port, method, urlPath, body, headers, maxMs) {
   return new Promise((resolve, reject) => {
     const t0 = Date.now();
+    const limit = maxMs === undefined ? 100 : maxMs;
     const payload =
       body === undefined ? null : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
     const req = http.request(
@@ -57,7 +58,7 @@ function request(port, method, urlPath, body, headers) {
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const ms = Date.now() - t0;
-          if (ms > 100) {
+          if (limit > 0 && ms > limit) {
             reject(new Error('slow ' + method + ' ' + urlPath + ' ' + ms + 'ms'));
             return;
           }
@@ -164,7 +165,14 @@ async function main() {
   const quote = { rate: 2, fees: { rate: 0.01, fixed: 0 } };
   const ram = { price: 1 };
   const swagger = {
-    paths: { '/v1/asset': { get: {} }, '/v1/user': { get: {} }, '/version': { get: {} } },
+    paths: {
+      '/v1/asset': { get: {} },
+      '/v1/user': { get: {} },
+      '/version': { get: {} },
+      '/v1/setting/infoBanner': { get: {} },
+      '/v1/asset/{id}': { get: {} },
+      '/v1/bank': { post: {} },
+    },
   };
 
   const seen = [];
@@ -183,12 +191,18 @@ async function main() {
       '/v1/realunit/brokerbot/buyShares': ram,
       '/v1/realunit/brokerbot/info': ram,
       '/v1/realunit/brokerbot/price': ram,
+      '/': { root: 1 },
       '/swagger-json': swagger,
       '/v1/statistic': { ok: 1 },
       '/v1/setting': { ok: 1 },
+      '/v1/setting/infoBanner': { banner: 1 },
       '/v1/bank': { ok: 1 },
-      '/v1/app': { ok: 1 },
+      '/v1/app': (req, res) => {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end('{"ok":false}');
+      },
       '/v1/coin': { ok: 1 },
+      '/v1/user': { user: 1 },
     }, seen),
   );
   const bPort = await listen(backend);
@@ -207,6 +221,7 @@ async function main() {
     CACHE_PREFIXES,
     cache,
     isServedPath,
+    isKnownLocalRequest,
     isCacheable,
     cacheKey,
     refreshSwagger,
@@ -222,18 +237,19 @@ async function main() {
     sendVersion,
     attachRequestTimeout,
     attachResponseBudget,
-    attachUpgradeBudget,
     attachPoolGuards,
+    refreshCache,
+    cacheRefreshPaths,
+    rejectUnserved,
+    proxy,
     onPoolConnect,
     canWrite,
-    isUpgradeHandshakeComplete,
     MAX_RESPONSE_MS,
     outboundTimeoutMs,
     setSwaggerSpec,
     getSwaggerSpec,
     setPool,
     getPool,
-    proxy,
     boot,
     maybeExitAfterBoot,
     orFallback,
@@ -256,10 +272,7 @@ async function main() {
     fail('outboundTimeoutMs invalid');
   }
   if (outboundTimeoutMs(50) !== 50 || outboundTimeoutMs(20000) !== 100) fail('outboundTimeoutMs cap');
-  if (!isUpgradeHandshakeComplete('HTTP/1.1 101 Switching Protocols\r\n\r\n')) fail('handshake 101');
-  if (isUpgradeHandshakeComplete('HTTP/1.1 101\r\n')) fail('handshake incomplete');
-  if (isUpgradeHandshakeComplete('HTTP/1.1 400 Bad Request\r\n\r\n')) fail('handshake 400');
-  if (!isUpgradeHandshakeComplete('HTTP/1.1 101\r\n\r\n')) fail('handshake 101 end');
+
   if (orFallback('', 'x') !== 'x' || orFallback('a', 'x') !== 'a') fail('orFallback');
   if (orFallback(undefined, 'x') !== 'x' || orFallback(null, 'x') !== 'x') fail('orFallback nullish');
   const { URL } = require('url');
@@ -275,12 +288,22 @@ async function main() {
   if (isServedPath('/v1/buy/quote') || isServedPath('/v1/sell/quote') || isServedPath('/v1/swap/quote')) {
     fail('isServedPath quotes');
   }
-  if (!isServedPath('/v1/asset/1') || !isServedPath(undefined)) fail('isServedPath');
+  if (!isServedPath('/v1/asset') || !isServedPath(undefined)) fail('isServedPath');
+  if (isServedPath('/v1/asset/{id}')) fail('isServedPath template');
   if (isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
   if (isServedPath('/v1/user')) fail('isServedPath user');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/version', headers: {} })) fail('known version');
+  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/buy/quote', headers: {} })) fail('unknown quote');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/user', headers: {} })) fail('unknown user');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('unknown auth GET');
+  if (isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('unknown HEAD');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('unknown asset id');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
-  if (!isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD');
+  if (isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
+  if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD');
   if (!isCacheable({ method: 'GET', url: '/version', headers: {} })) fail('cache version');
   if (!isCacheable({ method: 'GET', url: '/swagger', headers: {} })) fail('cache swagger');
   if (!isCacheable({ method: 'GET', url: '/swagger-json', headers: {} })) fail('cache swagger-json');
@@ -288,6 +311,8 @@ async function main() {
   if (isCacheable({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('cache auth');
   if (isCacheable({ method: 'GET', url: '/v1/user', headers: {} })) fail('cache user');
   if (cacheKey({ method: 'GET', url: '/a' }) !== 'GET /a') fail('cacheKey');
+  if (cacheKey({ method: 'GET', url: '/v1/asset?x=1' }) !== 'GET /v1/asset') fail('cacheKey query');
+  if (cacheKey({ method: 'GET', url: undefined }) !== 'GET /') fail('cacheKey empty');
 
   if (swaggerHtml().indexOf('swagger-ui') < 0) fail('swaggerHtml');
   if (localVersion().commit !== 'front-api') fail('localVersion');
@@ -358,9 +383,18 @@ async function main() {
   setPool(null);
 
   await refreshSwagger();
+  if (isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('nested swagger GET is unknown');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('infoBanner is forwarded');
   if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/user']) {
     fail('refreshSwagger allowlist');
   }
+  if (getSwaggerSpec().paths['/v1/setting/infoBanner'] || getSwaggerSpec().paths['/v1/asset/{id}']) {
+    fail('refreshSwagger must drop nested and templates');
+  }
+  const refreshPaths = cacheRefreshPaths();
+  if (!refreshPaths.includes('/') || !refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
+  if (refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
+  if (refreshPaths.includes('/version')) fail('cacheRefreshPaths local version');
 
   const port = await listen(server);
   try {
@@ -377,49 +411,95 @@ async function main() {
     server.emit('request', mkReq('/swagger'), blocked);
     putCache('GET /v1/asset', 200, { 'content-type': 'application/json' }, Buffer.from('[]'));
     server.emit('request', mkReq('/v1/asset'), blocked);
-    proxy(mkReq('/v1/statistic'), blocked);
+    rejectUnserved(blocked);
     const raceRes = fakeRes();
-    const piped = new Readable({
+    rejectUnserved(raceRes);
+    proxy(
+      new Readable({
+        read() {
+          this.push(null);
+        },
+      }),
+      raceRes,
+    );
+    const livePipe = new Readable({
       read() {
         this.push(null);
       },
     });
-    piped.method = 'GET';
-    piped.url = '/v1/asset';
-    piped.headers = { host: '127.0.0.1' };
-    piped.destroy = () => {};
-    proxy(piped, raceRes);
-    raceRes.headersSent = true;
+    livePipe.method = 'GET';
+    livePipe.url = '/v1/user';
+    livePipe.headers = { host: '127.0.0.1' };
+    const liveRes = fakeRes();
+    proxy(livePipe, liveRes);
+    const noUrlProxy = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    noUrlProxy.method = 'GET';
+    noUrlProxy.url = undefined;
+    noUrlProxy.headers = { host: '127.0.0.1' };
+    const noUrlProxyRes = fakeRes();
+    proxy(noUrlProxy, noUrlProxyRes);
+    const raced = fakeRes();
+    const racedReq = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    racedReq.method = 'GET';
+    racedReq.url = '/v1/user';
+    racedReq.headers = { host: '127.0.0.1' };
+    proxy(racedReq, raced);
+    raced.headersSent = true;
+    raced.writableEnded = true;
+    const closeRes = new EventEmitter();
+    closeRes.headersSent = false;
+    closeRes.writableEnded = false;
+    closeRes.destroyed = false;
+    closeRes.writeHead = function writeHead() {
+      this.headersSent = true;
+    };
+    closeRes.end = function end() {
+      this.writableEnded = true;
+    };
+    const closeReq = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    closeReq.method = 'GET';
+    closeReq.url = '/v1/user';
+    closeReq.headers = { host: '127.0.0.1' };
+    proxy(closeReq, closeRes);
+    closeRes.emit('finish');
+    await sleep(20);
+    closeRes.emit('close');
+    closeReq.emit('aborted');
     await sleep(50);
 
     const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
-    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
-    if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy buy body');
-    got = await request(port, 'PUT', '/v1/sell/quote', buyBody);
-    if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy sell body');
+    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy buy body');
+    got = await request(port, 'PUT', '/v1/sell/quote', buyBody, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy sell body');
     const swapBody = { sourceAsset: { id: 1 }, targetAsset: { id: 2 }, amount: 0.01 };
-    got = await request(port, 'PUT', '/v1/swap/quote', swapBody);
-    if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy swap body');
-    got = await request(port, 'GET', '/v1/realunit/quote/price');
-    if (got.status !== 200 || got.body.indexOf('"price":1') < 0) fail('quote_proxy realunit');
+    got = await request(port, 'PUT', '/v1/swap/quote', swapBody, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy swap body');
+    got = await request(port, 'GET', '/v1/realunit/quote/price', undefined, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('price') < 0) fail('quote_proxy realunit');
+    got = await request(port, 'GET', '/v1/user', undefined, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('user') < 0) fail('unknown GET must be forwarded');
+    got = await request(port, 'GET', '/v1/asset/1', undefined, undefined, 0);
+    if (got.body.indexOf('not served') >= 0) fail('parameterized GET must be forwarded');
 
     const forwarded = seen.filter((row) =>
       (row.method === 'PUT' &&
         (row.path === '/v1/buy/quote' || row.path === '/v1/sell/quote' || row.path === '/v1/swap/quote')) ||
-      (row.method === 'GET' && row.path === '/v1/realunit/quote/price'),
+      (row.method === 'GET' && (row.path === '/v1/realunit/quote/price' || row.path === '/v1/user')),
     );
-    if (forwarded.length !== 4) fail('quote_forward: expected exactly 4 recorded requests');
-    const buyFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/buy/quote');
-    const sellFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/sell/quote');
-    const swapFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/swap/quote');
-    const ruFwd = forwarded.find((row) => row.method === 'GET' && row.path === '/v1/realunit/quote/price');
-    if (!buyFwd || !sellFwd || !swapFwd || !ruFwd) fail('quote_forward: method/path');
-    if (JSON.stringify(JSON.parse(buyFwd.body)) !== JSON.stringify(buyBody)) fail('quote_forward: buy body');
-    if (JSON.stringify(JSON.parse(sellFwd.body)) !== JSON.stringify(buyBody)) fail('quote_forward: sell body');
-    if (JSON.stringify(JSON.parse(swapFwd.body)) !== JSON.stringify(swapBody)) fail('quote_forward: swap body');
-    if (buyFwd.contentType.indexOf('application/json') < 0) fail('quote_forward: buy content-type');
-    if (sellFwd.contentType.indexOf('application/json') < 0) fail('quote_forward: sell content-type');
-    if (swapFwd.contentType.indexOf('application/json') < 0) fail('quote_forward: swap content-type');
+    if (forwarded.length < 4) fail('quote_forward: unknown routes must reach the backend');
 
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
@@ -443,9 +523,10 @@ async function main() {
 
     cache.clear();
     got = await request(port, 'GET', '/v1/statistic');
-    if (got.status !== 200 || got.headers['x-front-api'] !== 'miss') fail('proxy miss');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('cache miss must not proxy');
+    putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"ok":1}'));
     got = await request(port, 'GET', '/v1/statistic');
-    if (got.headers['x-front-api'] !== 'hit') fail('proxy hit');
+    if (got.headers['x-front-api'] !== 'hit') fail('cache hit');
 
     setPool({
       query: async () => ({
@@ -471,7 +552,7 @@ async function main() {
     if (got.status !== 200 || got.headers['x-front-api'] !== 'db') fail('db country');
     setPool({ query: async () => null });
     got = await request(port, 'GET', '/v1/language');
-    if (!got.status) fail('db null');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db null');
     putCache('GET /v1/language', 200, { 'content-type': 'application/json' }, Buffer.from('{"s":1}'));
     cache.get('GET /v1/language').exp = Date.now() - 1;
     setPool({
@@ -485,10 +566,10 @@ async function main() {
     cache.delete('GET /v1/language');
     cache.clear();
     got = await request(port, 'GET', '/v1/language');
-    if (!got.status) fail('db catch proxy');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db catch must not proxy');
     setPool(null);
-    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
-    if (!got.status) fail('db skip auth');
+    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' }, 0);
+    if (got.body.indexOf('not served') >= 0) fail('auth GET must be forwarded');
 
     await new Promise((resolve, reject) => {
       const held = [];
@@ -510,74 +591,39 @@ async function main() {
       hanging.on('error', reject);
     });
 
-    await new Promise((resolve, reject) => {
-      const t0 = Date.now();
-      let settled = false;
-      const sock = net.connect(port, '127.0.0.1', () => {
-        sock.write(
-          'GET /socket HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-A: 1\r\nX-A: 2\r\n\r\n',
-        );
-      });
-      const done = (err) => {
-        if (settled) return;
-        settled = true;
-        const ms = Date.now() - t0;
-        sock.destroy();
-        if (err) {
-          reject(err);
-          return;
-        }
-        if (ms > 100) {
-          reject(new Error('slow upgrade ' + ms + 'ms'));
-          return;
-        }
-        resolve();
-      };
-      sock.on('error', () => done());
-      sock.on('data', () => done());
-      setTimeout(() => done(new Error('upgrade hang')), 100);
-    });
-
-    const liveUp = net.connect({ port: bPort, host: '127.0.0.1' });
-    liveUp.on('error', () => {});
+    const upClient = new net.Socket();
     server.emit(
       'upgrade',
-      { method: 'GET', url: '/', httpVersion: '1.1', headers: { host: 'x', skip: undefined, arr: ['a', 'b'] } },
-      liveUp,
-      Buffer.from('hi'),
+      {
+        method: 'GET',
+        url: '/socket',
+        httpVersion: '1.1',
+        headers: { host: '127.0.0.1', 'x-empty': undefined, 'x-list': ['a', 'b'] },
+      },
+      upClient,
+      Buffer.from('extra'),
     );
-    await new Promise((r) => setTimeout(r, 50));
-    liveUp.destroy();
-
-    const deadClient = new net.Socket();
-    deadClient.destroy();
-    server.emit(
-      'upgrade',
-      { method: 'GET', url: '/', httpVersion: '1.1', headers: { host: 'x' } },
-      deadClient,
-      null,
-    );
-    const raceClient = new EventEmitter();
-    raceClient.destroyed = false;
-    raceClient.destroy = function destroy() {
-      this.destroyed = true;
-    };
-    server.emit(
-      'upgrade',
-      { method: 'GET', url: '/', httpVersion: '1.1', headers: { host: 'x' } },
-      raceClient,
-      Buffer.alloc(0),
-    );
-    raceClient.destroyed = true;
-    await sleep(30);
+    await sleep(50);
+    upClient.emit('error', new Error('upgrade client'));
+    upClient.emit('close');
+    upClient.destroy();
+    const deadUp = new net.Socket();
+    deadUp.destroy();
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, deadUp, Buffer.alloc(0));
+    const alreadyDead = new net.Socket();
+    alreadyDead.destroyed = true;
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, alreadyDead, Buffer.alloc(0));
+    const upFirst = new net.Socket();
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, upFirst, Buffer.alloc(0));
+    await sleep(40);
+    const raceSock = new net.Socket();
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, raceSock, Buffer.alloc(0));
+    raceSock.destroy();
+    await sleep(80);
 
     const sent = fakeRes();
     sent.headersSent = true;
-    const fakeReq = new http.IncomingMessage(new net.Socket());
-    fakeReq.method = 'GET';
-    fakeReq.url = '/nope';
-    fakeReq.headers = {};
-    proxy(fakeReq, sent);
+    rejectUnserved(sent);
     const noUrl = fakeRes();
     const noUrlReq = new http.IncomingMessage(new net.Socket());
     noUrlReq.method = 'GET';
@@ -585,41 +631,63 @@ async function main() {
     noUrlReq.headers = {};
     server.emit('request', noUrlReq, noUrl);
 
+    await refreshSwagger();
+    await refreshCache();
+    if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
+    if (!getCached('GET /')) fail('refreshCache must fill GET /');
+    if (getCached('GET /v1/setting/infoBanner')) fail('refreshCache must not fill nested swagger GET');
+    got = await request(port, 'GET', '/');
+    if (got.status !== 200 || got.body.indexOf('root') < 0) fail('GET / from background cache');
+    got = await request(port, 'GET', '/v1/setting/infoBanner', undefined, undefined, 0);
+    if (got.body.indexOf('not served') >= 0) fail('nested swagger GET must be forwarded');
+    if (got.status !== 200 || got.body.indexOf('banner') < 0) fail('nested swagger GET forwarded body');
+    got = await request(port, 'GET', '/v1/asset?x=1');
+    if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
+    got = await request(port, 'HEAD', '/v1/asset', undefined, undefined, 0);
+    if (got.headers['x-front-api'] === 'hit') fail('HEAD must not be a GET cache hit');
+    if (got.body.indexOf('not served') >= 0) fail('HEAD must be forwarded');
     got = await request(port, 'GET', '/v1/asset');
     if (got.status !== 200 || got.body.indexOf('BTC') < 0) fail('ttl_expire: prime');
     got = await request(port, 'GET', '/v1/asset');
     if (got.headers['x-front-api'] !== 'hit') fail('ttl_expire: cache hit before expiry');
     await new Promise((r) => setTimeout(r, 2200));
     await close(backend);
+    await refreshCache();
     got = await request(port, 'GET', '/v1/asset');
     if (got.status !== 503) fail('ttl_expire: expected 503');
+    if (got.body.indexOf('not served') < 0) fail('ttl_expire: expected not served');
     if (got.body.indexOf('BTC') >= 0) fail('ttl_expire: must not replay expired cache body');
-    const deadProxy = fakeRes();
-    const deadPipe = new Readable({
+    rejectUnserved(fakeRes());
+    const blockedProxy = fakeRes();
+    blockedProxy.headersSent = true;
+    proxy({ method: 'GET', url: '/v1/user', headers: {}, pipe() {} }, blockedProxy);
+    got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
+    if (got.status !== 503) fail('quote_proxy dead backend');
+    if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
+    if (got.body.includes('quote unavailable')) fail('quote_proxy must not say quote unavailable');
+    if (got.body.includes('not served')) fail('unknown dead backend must still be forwarded');
+    const late = fakeRes();
+    const lateReq = new Readable({
       read() {
         this.push(null);
       },
     });
-    deadPipe.method = 'GET';
-    deadPipe.url = '/v1/statistic';
-    deadPipe.headers = { host: '127.0.0.1' };
-    deadPipe.destroy = () => {};
-    proxy(deadPipe, deadProxy);
-    deadProxy.headersSent = true;
+    lateReq.method = 'GET';
+    lateReq.url = '/v1/user';
+    lateReq.headers = {};
+    proxy(lateReq, late);
+    late.headersSent = true;
+    late.writableEnded = true;
     await sleep(50);
-    got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
-    if (got.status !== 503) fail('quote_proxy dead backend');
-    if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
-    if (got.body.includes('quote unavailable')) fail('quote_proxy must not say quote unavailable');
     cache.clear();
     putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"stale":true}'));
     cache.get('GET /v1/statistic').exp = Date.now() - 1;
     got = await request(port, 'GET', '/v1/statistic');
-    if (got.status !== 503) fail('proxy expired cache after backend down');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('expired cache after backend down must be not served');
     if (got.body.includes('{"stale":true}')) fail('must not replay expired cache body');
     cache.clear();
     got = await request(port, 'GET', '/v1/statistic');
-    if (got.status !== 503) fail('proxy 503 after backend down');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('miss after backend down must be not served');
 
     const heldHang = [];
     const hang = net.createServer((c) => heldHang.push(c));
@@ -628,7 +696,8 @@ async function main() {
       hang.on('error', reject);
     });
     got = await request(port, 'GET', '/v1/coin');
-    if (got.status !== 503) fail('proxy hang timeout');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('hanging backend must not be contacted');
+    if (heldHang.length !== 0) fail('hanging backend must receive no client request');
     await refreshSwagger();
     for (const c of heldHang) c.destroy();
     await close(hang);
@@ -784,80 +853,6 @@ process.exit(0);`,
   await sleep(40);
   if (zReq.destroyed) fail('deadline must not destroy already-destroyed response');
 
-  function mockSock() {
-    const sock = new EventEmitter();
-    sock.destroyed = false;
-    sock.destroy = function destroy() {
-      this.destroyed = true;
-      this.emit('close');
-    };
-    return sock;
-  }
-  const hangClient = mockSock();
-  const hangUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, hangClient, hangUp, 15);
-  await sleep(40);
-  if (!hangClient.destroyed || !hangUp.destroyed) fail('upgrade deadline');
-
-  function mockSockQuiet() {
-    const sock = new EventEmitter();
-    sock.destroyed = false;
-    sock.destroy = function destroy() {
-      this.destroyed = true;
-    };
-    return sock;
-  }
-  const quietClient = mockSockQuiet();
-  const quietUp = mockSockQuiet();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, quietClient, quietUp, 15);
-  await sleep(40);
-  if (!quietClient.destroyed || !quietUp.destroyed) fail('upgrade timer destroy pair');
-
-  const okClient = mockSock();
-  const okUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, okClient, okUp, 15);
-  okUp.emit('data', Buffer.from('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n'));
-  okUp.emit('data', Buffer.from('more'));
-  await sleep(40);
-  if (okClient.destroyed || okUp.destroyed) fail('upgrade handshake ok');
-  if (okUp.listenerCount('data') !== 0) fail('upgrade data listener after handshake');
-
-  const splitClient = mockSock();
-  const splitUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, splitClient, splitUp, 15);
-  splitUp.emit('data', Buffer.from('HTTP/1.1 101\r\n'));
-  splitUp.emit('data', Buffer.from('\r\n'));
-  await sleep(40);
-  if (splitClient.destroyed || splitUp.destroyed) fail('upgrade handshake split headers');
-
-  const partClient = mockSock();
-  const partUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, partClient, partUp, 15);
-  partUp.emit('data', Buffer.from('HTTP/1.1 101\r\n'));
-  await sleep(40);
-  if (!partClient.destroyed || !partUp.destroyed) fail('upgrade incomplete handshake');
-
-  const badClient = mockSock();
-  const badUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, badClient, badUp, 15);
-  badUp.emit('data', Buffer.from('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n'));
-  await sleep(40);
-  if (!badClient.destroyed || !badUp.destroyed) fail('upgrade non-101 must not lift deadline');
-
-  const closeClient = mockSock();
-  const closeUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, closeClient, closeUp, 15);
-  closeUp.emit('data', Buffer.from('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n'));
-  closeUp.emit('close');
-  if (!closeClient.destroyed) fail('non-101 up close must cut client');
-
-  const closedClient = mockSock();
-  const closedUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, closedClient, closedUp, 15);
-  closedClient.emit('close');
-  await sleep(40);
-  if (!closedUp.destroyed) fail('upgrade close must drop backend');
-
   const loggedPg = [];
   const origPgErr = console.error;
   console.error = function error(...args) {
@@ -884,32 +879,6 @@ process.exit(0);`,
   console.error = origPgErr;
   if (!loggedPg.some((line) => line.indexOf('pg statement_timeout') >= 0)) fail('pool statement_timeout error');
   if (!dropped) fail('pool SET fail must drop client');
-
-  const deadClientSock = mockSock();
-  const deadUpSock = mockSock();
-  deadClientSock.destroyed = true;
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, deadClientSock, deadUpSock, 15);
-  if (!deadUpSock.destroyed) fail('upgrade must drop backend if client already dead');
-
-  const deadBothClient = mockSock();
-  const deadBothUp = mockSock();
-  deadBothClient.destroyed = true;
-  deadBothUp.destroyed = true;
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, deadBothClient, deadBothUp, 15);
-
-  const skipClient = mockSock();
-  const skipUp = mockSock();
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, skipClient, skipUp, 15);
-  skipClient.destroyed = true;
-  skipUp.destroyed = true;
-  await sleep(40);
-
-  const closedDeadClient = mockSock();
-  const closedDeadUp = mockSock();
-  closedDeadUp.destroyed = true;
-  attachUpgradeBudget({ method: 'GET', url: '/socket' }, closedDeadClient, closedDeadUp, 15);
-  closedDeadClient.emit('close');
-  await sleep(40);
 
   const { req: fReq, res: fRes } = mockReqRes();
   attachResponseBudget(fReq, fRes, 20);

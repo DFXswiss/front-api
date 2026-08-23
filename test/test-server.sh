@@ -5,13 +5,15 @@
 # Arms:
 #   local one-command start (stub + process)          local_start
 #   swagger snapshot empty → 503 local body          swagger_empty
-#   PUT /v1/buy/quote → 503 backend unavailable      quote_proxy
-#   mock records forwarded method/path/body          quote_forward
+#   PUT /v1/buy/quote is forwarded                   quote_proxy
+#   quotes must reach the backend                    quote_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
-#   attachRequestTimeout → callback + destroy        proxy_timeout
+#   attachRequestTimeout on background refresh only  refresh_timeout
 #   no in-memory quotes / stale cache                quotes_gone
-#   every HTTP response ≤ 100ms                      max_response_100
+#   known GET ≤ 100ms; unknown is forwarded          max_response_100
+#   known miss is 503 not served                     known_local
+#   quotes/upgrades forwarded                        unknown_forward
 #   c8 100% lines/functions/branches/statements      coverage_100
 #   c8 --all includes every new production .js file  coverage_all
 set -euo pipefail
@@ -43,6 +45,7 @@ if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; the
   fail "server.js must not serve stale cache"
 fi
 grep -q 'quote_forward' "$test_js" || fail "quote_forward: pin missing"
+grep -Fq 'maxMs === undefined ? 100 : maxMs' "$test_js" || fail "known_local: helper 100ms cap is known routes only"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
 grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
 grep -Fq 'orFallback(process.env.CACHE_TTL_MS, 300000)' "$server_js" || fail "cache_ttl_default: 5 minutes missing"
@@ -72,18 +75,31 @@ grep -Fq 'REQUEST_TIMEOUT_MS = outboundTimeoutMs(' "$server_js" || fail "max_res
 grep -Fq 'if (!Number.isFinite(n) || n <= 0)' "$server_js" || fail "max_response_100: outbound timeout 0/NaN must not disable the cap"
 grep -q 'connectionTimeoutMillis: 90' "$server_js" || fail "max_response_100: pool acquire must not outlive the deadline"
 grep -Fq 'orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)' "$server_js" || fail "REQUEST_TIMEOUT_MS default cap"
-grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing"
-grep -q 'attachUpgradeBudget(req, socket, up)' "$server_js" || fail "max_response_100: upgrade handshake budget missing"
+grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing on known routes"
+grep -q 'function isKnownLocalRequest' "$server_js" || fail "known_local: must distinguish known GET routes from unknown"
+if ! grep -q 'function proxy' "$server_js"; then
+  fail "unknown_forward: unknown requests must be forwarded"
+fi
+grep -q 'req.pipe' "$server_js" || fail "unknown_forward: must pipe unknown requests outbound"
+grep -q 'net.connect' "$server_js" || fail "unknown_forward: upgrades must be tunnelled"
 grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
-grep -q 'isUpgradeHandshakeComplete' "$server_js" || fail "max_response_100: upgrade must settle only on a completed 101"
-grep -Fq "up.removeListener('data', onData)" "$server_js" || fail "max_response_100: handshake listener must not outlive the HTTP upgrade"
 grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
 grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
 grep -Fq 'if (!canWrite(res)) return;' "$server_js" || fail "max_response_100: writers must refuse after the deadline"
 grep -Fq 'if (!res.destroyed) req.destroy();' "$server_js" || fail "max_response_100: deadline must cut an unfinished drain"
 grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 503 must close the connection"
-grep -Fq "res.on('finish', () => p.destroy())" "$server_js" || fail "max_response_100: proxy must drop outbound when the response finishes"
-grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms"
+grep -q 'function rejectUnserved' "$server_js" || fail "known_local: uncached known GETs must 503 not served"
+grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill off the request path"
+grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "known_local: background refresh must include GET /"
+grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set is list roots only"
+grep -Fq "req.method !== 'GET'" "$server_js" || fail "known_local: GET cache must not treat HEAD as cacheable"
+grep -Fq 'CACHE_PREFIXES.includes(path)' "$server_js" || fail "known_local: list roots are exact; parameterized paths are forwarded"
+grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
+grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
+grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"
+grep -Fq "no** 100ms" "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must say forwarded requests have no 100ms rule"
+grep -q 'Unknown routes' "$repo_root/REVIEW.md" || fail "unknown_forward: REVIEW must require forwarding unknown routes"
+grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms on known routes"
 grep -q 'ERROR' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must require an ERROR log on a deadline miss"
 grep -q 'FRONT_API_EXIT_AFTER_BOOT=1' "$repo_root/test/run-main-coverage.sh" || fail "coverage_100: require.main collection missing"
 grep -q 'coverage:report' "$pkg" || fail "coverage_100: coverage:report script missing"

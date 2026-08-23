@@ -31,8 +31,8 @@ function outboundTimeoutMs(raw) {
 const REQUEST_TIMEOUT_MS = outboundTimeoutMs(orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS));
 const STARTED = new Date().toISOString();
 
-// Public GET prefixes this layer may answer from cache. Authenticated
-// requests are never cached — they always go to the backend.
+// Public GET list roots this layer may answer from cache. Authenticated
+// requests are never cached.
 const CACHE_PREFIXES = [
   '/v1/asset',
   '/v1/fiat',
@@ -77,15 +77,15 @@ try {
 }
 
 function cacheKey(req) {
-  return req.method + ' ' + req.url;
+  return req.method + ' ' + (req.url ?? '/').split('?')[0];
 }
 
 function isCacheable(req) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  if (req.method !== 'GET') return false;
   if (req.headers.authorization) return false;
-  const path = (req.url || '/').split('?')[0];
+  const path = (req.url ?? '/').split('?')[0];
   if (path === '/' || path === '/version' || path === '/swagger' || path === '/swagger-json') return true;
-  return CACHE_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
+  return CACHE_PREFIXES.includes(path);
 }
 
 function getCached(key) {
@@ -114,12 +114,6 @@ function canWrite(res) {
 
 function logDeadlineError(req) {
   console.error('ERROR response exceeded ' + MAX_RESPONSE_MS + 'ms', req.method, req.url);
-}
-
-function isUpgradeHandshakeComplete(headerBlock) {
-  if (headerBlock.indexOf('\r\n\r\n') < 0) return false;
-  const statusLine = headerBlock.slice(0, headerBlock.indexOf('\r\n'));
-  return statusLine.split(' ')[1] === '101';
 }
 
 function attachResponseBudget(req, res, budgetMs) {
@@ -153,46 +147,6 @@ function attachResponseBudget(req, res, budgetMs) {
   hard.unref();
   res.on('finish', finish);
   res.on('close', finish);
-  return true;
-}
-
-function attachUpgradeBudget(req, socket, up, budgetMs) {
-  if (socket.destroyed) {
-    if (!up.destroyed) up.destroy();
-    return true;
-  }
-  const asked = budgetMs === undefined ? MAX_RESPONSE_MS : budgetMs;
-  const limit = Math.min(MAX_RESPONSE_MS, asked);
-  const fireAt = Math.max(1, limit - 10);
-  let settled = false;
-  let header = '';
-  const finish = () => {
-    if (settled) return;
-    settled = true;
-    up.removeListener('data', onData);
-    header = '';
-  };
-  const onData = (chunk) => {
-    header += chunk.toString('latin1');
-    if (isUpgradeHandshakeComplete(header)) finish();
-  };
-  const timer = setTimeout(() => {
-    if (settled) return;
-    logDeadlineError(req);
-    if (!up.destroyed) up.destroy();
-    if (!socket.destroyed) socket.destroy();
-    finish();
-  }, fireAt);
-  timer.unref();
-  up.on('data', onData);
-  socket.once('close', () => {
-    if (!up.destroyed) up.destroy();
-    finish();
-  });
-  up.once('close', () => {
-    if (!socket.destroyed) socket.destroy();
-    finish();
-  });
   return true;
 }
 
@@ -255,9 +209,26 @@ const EXACT_GET_PATHS = [
 ];
 
 function isServedPath(path) {
-  const p = (path || '/').split('?')[0];
+  const p = (path ?? '/').split('?')[0];
   if (EXACT_GET_PATHS.includes(p)) return true;
-  return CACHE_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
+  return CACHE_PREFIXES.includes(p);
+}
+
+function isKnownLocalRequest(req) {
+  if (req.method !== 'GET') return false;
+  const path = (req.url ?? '/').split('?')[0];
+  if (
+    path === '/version' ||
+    path === '/swagger' ||
+    path === '/swagger/' ||
+    path === '/swagger-ui' ||
+    path === '/swagger-ui/' ||
+    path === '/swagger-json' ||
+    path === '/swagger-json/'
+  ) {
+    return true;
+  }
+  return isCacheable(req);
 }
 
 async function refreshSwagger() {
@@ -270,7 +241,6 @@ async function refreshSwagger() {
       paths[p] = ops;
     }
     swaggerSpec = { ...got.json, paths, info: { ...(got.json.info || {}), title: 'DFX API' } };
-    console.log('swagger snapshot paths', Object.keys(paths).length);
   } catch (err) {
     console.error('swagger refresh', err.message);
   }
@@ -308,7 +278,7 @@ function sendJson(res, status, body, via, extraHeaders) {
     'x-content-type-options': 'nosniff',
     'x-front-api': via,
     'access-control-allow-origin': '*',
-  }, extraHeaders || {}));
+  }, extraHeaders ?? {}));
   res.end(buf);
 }
 
@@ -395,13 +365,20 @@ async function tryDbRead(path) {
   return Buffer.from(JSON.stringify(spec.map(result.rows)));
 }
 
+function rejectUnserved(res) {
+  sendJson(res, 503, { statusCode: 503, message: 'not served', retryAfter: 1 }, 'local', {
+    connection: 'close',
+    'retry-after': '1',
+  });
+}
+
 function proxy(req, res) {
   if (!canWrite(res)) return;
   const target = new URL(BACKEND);
   const opts = {
     hostname: target.hostname,
     port: backendPortFor(target),
-    path: req.url,
+    path: req.url ?? '/',
     method: req.method,
     headers: { ...req.headers, host: target.host },
   };
@@ -413,10 +390,6 @@ function proxy(req, res) {
       const body = Buffer.concat(chunks);
       const headers = { ...up.headers };
       delete headers['transfer-encoding'];
-      if (isCacheable(req) && up.statusCode === 200) {
-        putCache(cacheKey(req), up.statusCode, headers, body);
-        headers['x-front-api'] = 'miss';
-      }
       res.writeHead(up.statusCode, headers);
       res.end(body);
     });
@@ -431,16 +404,35 @@ function proxy(req, res) {
     });
     res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
   });
-  attachRequestTimeout(p, REQUEST_TIMEOUT_MS, () => {
-    p.destroy();
-  });
   res.on('finish', () => p.destroy());
+  res.on('close', () => p.destroy());
+  req.on('aborted', () => p.destroy());
   req.pipe(p);
 }
 
+function cacheRefreshPaths() {
+  return ['/', ...CACHE_PREFIXES];
+}
+
+async function refreshCache() {
+  for (const p of cacheRefreshPaths()) {
+    try {
+      const got = await getBackendJson(p);
+      if (got.status !== 200) continue;
+      putCache('GET ' + p, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, Buffer.from(JSON.stringify(got.json)));
+    } catch (err) {
+      console.error('cache refresh', p, err.message);
+    }
+  }
+}
+
 const server = http.createServer((req, res) => {
+  if (!isKnownLocalRequest(req)) {
+    proxy(req, res);
+    return;
+  }
   attachResponseBudget(req, res);
-  const path = (req.url || '/').split('?')[0];
+  const path = (req.url ?? '/').split('?')[0];
   if (path === '/version' && req.method === 'GET') {
     sendVersion(req, res, localVersion(), 'local');
     return;
@@ -468,7 +460,7 @@ const server = http.createServer((req, res) => {
   }
 
   const key = cacheKey(req);
-  const hit = isCacheable(req) ? getCached(key) : null;
+  const hit = getCached(key);
   if (hit && Date.now() <= hit.exp) {
     if (!canWrite(res)) return;
     const headers = { ...hit.headers, 'x-front-api': 'hit' };
@@ -481,7 +473,7 @@ const server = http.createServer((req, res) => {
     tryDbRead(path)
       .then((body) => {
         if (!body) {
-          proxy(req, res);
+          rejectUnserved(res);
           return;
         }
         putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
@@ -489,12 +481,12 @@ const server = http.createServer((req, res) => {
       })
       .catch((err) => {
         console.error('db-read', path, err.message);
-        proxy(req, res);
+        rejectUnserved(res);
       });
     return;
   }
 
-  proxy(req, res);
+  rejectUnserved(res);
 });
 
 server.on('upgrade', (req, socket, head) => {
@@ -520,16 +512,18 @@ server.on('upgrade', (req, socket, head) => {
     up.pipe(socket);
     socket.pipe(up);
   });
-  attachUpgradeBudget(req, socket, up);
   up.on('error', () => socket.destroy());
   socket.on('error', () => up.destroy());
+  socket.once('close', () => up.destroy());
+  up.once('close', () => socket.destroy());
 });
 
 function boot() {
   server.listen(PORT, BIND, () => {
     console.log(`front-api listening on ${BIND}:${PORT}` + (pool ? ' db-read on' : ''));
-    refreshSwagger();
+    refreshSwagger().then(() => refreshCache());
     setInterval(refreshSwagger, 10 * 60 * 1000).unref();
+    setInterval(refreshCache, 60 * 1000).unref();
   });
 }
 
@@ -571,9 +565,14 @@ module.exports = {
   EXACT_GET_PATHS,
   cache,
   isServedPath,
+  isKnownLocalRequest,
   isCacheable,
   cacheKey,
   refreshSwagger,
+  refreshCache,
+  cacheRefreshPaths,
+  rejectUnserved,
+  proxy,
   swaggerHtml,
   countryDto,
   languageDto,
@@ -584,15 +583,12 @@ module.exports = {
   localVersion,
   sendJson,
   sendVersion,
-  proxy,
   attachRequestTimeout,
   attachResponseBudget,
-  attachUpgradeBudget,
   attachPoolGuards,
   onPoolConnect,
   canWrite,
   logDeadlineError,
-  isUpgradeHandshakeComplete,
   MAX_RESPONSE_MS,
   outboundTimeoutMs,
   setSwaggerSpec,

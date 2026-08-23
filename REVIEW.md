@@ -18,8 +18,8 @@ This item includes the EN/DE PR-body form and GitHub-verified commits.
 Job `test` is `success` on **exactly this** SHA. That job includes the 100%
 coverage gate (`c8 --check-coverage` on all four metrics), the offered-route
 catalog check (`test/test-offered-routes.sh`), and the 100ms response
-deadline. A coverage miss, catalog miss, or a helper round-trip over 100ms
-is a red job, not a review note.
+deadline on known routes. A coverage miss, catalog miss, or a known-route
+helper round-trip over 100ms is a red job, not a review note.
 
 - `skipped` does not count as green unless this repository documents that skip
   as expected. Today: `test` is not skipped on drafts.
@@ -51,7 +51,7 @@ repository hygiene rule in CONTRIBUTING.md.
 ## 6. Tests cover the change
 
 New or changed branches in `server.js` (503 vs 200, cache hit/miss, allowlist,
-timeout, 100ms deadline, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
+timeout, 100ms deadline on known routes, unknown forwarding, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
 changes have a pin in `test/test-main-from-develop.sh`. Automatic release-PR
 body-form changes have a pin in `test/test-auto-release-pr.sh`. Green CI
 without a pin for a behaviour change is fail. Every production `*.js` file
@@ -115,11 +115,22 @@ Any fail on this item keeps the pull request as a draft or on changes
 requested. There is no "follow-up E2E" for a new or changed offered
 function unless the reviewer grants that in writing.
 
-## 12. 100ms response deadline
+## 12. Known routes: 100ms. Unknown routes: forwarded
 
-Every HTTP response from this process must finish within 100ms. Fail if
-`MAX_RESPONSE_MS` is not 100, if `REQUEST_TIMEOUT_MS` can exceed 100, if
-the inbound budget is missing, if the upgrade handshake has no deadline,
-if a deadline miss does not emit an `ERROR` log, if the change adds a
-path that cannot finish in 100ms, or if a test round-trip is allowed to
-take longer. A slower ping is a hard bug, not a performance note.
+This process knows a fixed set of local GET routes (version, swagger
+snapshot, fresh GET cache, optional Postgres). Every **known** HTTP
+response must finish within 100ms. Fail if `MAX_RESPONSE_MS` is not 100,
+if `REQUEST_TIMEOUT_MS` can exceed 100 for background refresh, if the
+inbound budget is missing on a known route, if a known route is forwarded
+to the backend or waits on any system that cannot guarantee 100ms, if a
+deadline miss on a known route does not emit an `ERROR` log, if the change
+adds a known path that cannot finish in 100ms, or if a **known-route**
+test round-trip is allowed to take longer. Forwarding a known route is a
+hard fail: it cannot guarantee 100ms. A slower ping of a known route is a
+hard bug, not a performance note.
+
+Unknown routes (everything this process does not answer itself, including
+quotes and WebSocket upgrades) **must** be forwarded to `BACKEND_URL`.
+They have no 100ms rule. Fail if an unknown request is answered with
+`503` `not served` instead of being forwarded, or if the 100ms budget is
+attached to the forward path.

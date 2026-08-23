@@ -86,9 +86,9 @@ for (const p of EXACT_GET_PATHS) {
   if (!exactGetNames.has(p)) fail('served GET path missing from exact catalog names: ' + p);
 }
 for (const p of CACHE_PREFIXES) {
-  const row = rowFor('GET', p, 'prefix');
-  if (!row) fail('CACHE_PREFIX missing as prefix row: ' + p);
-  if (!catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath missing from catalog: ' + p + '/x');
+  const row = rowFor('GET', p, 'exact');
+  if (!row) fail('CACHE_PREFIX missing as exact row: ' + p);
+  if (catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath must not be catalogued as served: ' + p + '/x');
 }
 
 const expectedKeys = new Set();
@@ -99,6 +99,6 @@ for (const key of seen) {
 }
 
 if (isServedPath('/v1/user')) fail('isServedPath unexpectedly true for /v1/user');
-if (catalogCovers('GET', '/v1/user')) fail('proxied /v1/user must not be in the catalog');
+if (catalogCovers('GET', '/v1/user')) fail('unserved /v1/user must not be in the catalog');
 
 console.log('ok offered-routes.json', catalog.routes.length, 'rows');
