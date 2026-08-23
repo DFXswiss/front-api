@@ -29,7 +29,7 @@ jobs:
       - name: Check for existing PR
         id: check-pr
         run: |
-          PR_COUNT=$(gh pr list --base main --head develop --state open --json number --jq 'length')
+          PR_COUNT=$(gh pr list --base main --head develop --state open --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)] | length')
           echo "pr_exists=$([[ $PR_COUNT -gt 0 ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,11 +49,17 @@ jobs:
           COMMIT_COUNT: ${{ steps.check-diff.outputs.commit_count }}
         run: |
           printf '%s\n' \
-            "## Automatic Release PR" \
+            "EN:" \
+            "Automatic release PR from develop onto main. Merging publishes the production image tag and is a human decision." \
+            "" \
+            "DE:" \
+            "Automatischer Release-PR von develop nach main. Der Merge veröffentlicht das Produktions-Image und ist eine menschliche Entscheidung." \
+            "" \
+            "<details>" \
+            "<summary>Details</summary>" \
             "" \
             "This PR was automatically created after changes were pushed to develop." \
             "It is the only path from develop onto main for this repository." \
-            "Merging it publishes the production image tag and is a human decision." \
             "Do not merge until develop has been checked on the development hub." \
             "" \
             "**Commits:** ${COMMIT_COUNT} new commit(s)" \
@@ -62,6 +68,8 @@ jobs:
             "- [ ] Review all changes" \
             "- [ ] Verify CI passes" \
             "- [ ] Approve and merge when ready for production" \
+            "" \
+            "</details>" \
             > /tmp/pr-body.md
 
           gh pr create \
