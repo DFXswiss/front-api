@@ -22,7 +22,6 @@ const PUBLIC_REPOS = new Set([
   'DFXswiss/services',
   'DFXswiss/packages',
   'DFXswiss/dfx-wallet',
-  'DFXswiss/front-api',
   'RealUnitCH/app',
 ]);
 const METHODS = new Set(['GET', 'PUT']);
@@ -67,6 +66,7 @@ for (const row of catalog.routes) {
     if (!ref || typeof ref !== 'object') fail('bad pointer on ' + key);
     if (ref.unidentified === true) {
       if (typeof ref.note !== 'string' || !ref.note) fail('unidentified pointer needs note: ' + key);
+      if (ref.repo !== undefined || ref.path !== undefined) fail('unidentified pointer must not set repo or path: ' + key);
       continue;
     }
     if (typeof ref.repo !== 'string' || !PUBLIC_REPOS.has(ref.repo)) {
@@ -76,8 +76,14 @@ for (const row of catalog.routes) {
   }
 }
 
+const exactGetNames = new Set();
+for (const row of catalog.routes) {
+  if (row.method === 'GET' && row.match === 'exact' && !RAM_GET_PATHS.includes(row.path)) {
+    for (const n of namesOf(row)) exactGetNames.add(n);
+  }
+}
 for (const p of EXACT_GET_PATHS) {
-  if (!catalogCovers('GET', p)) fail('served GET path missing from catalog: ' + p);
+  if (!exactGetNames.has(p)) fail('served GET path missing from exact catalog names: ' + p);
 }
 for (const p of EXACT_PUT_PATHS) {
   const row = rowFor('PUT', p, 'exact');
