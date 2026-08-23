@@ -165,6 +165,8 @@ async function main() {
   const swagger = {
     paths: {
       '/v1/asset': { get: {} },
+      '/v1/asset/x': { get: {} },
+      '/v1/asset/{id}': { get: {} },
       '/v1/other': { get: {} },
       '/version': { get: {} },
       '/v1/bank': { post: {} },
@@ -366,6 +368,9 @@ async function main() {
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('outside allowlist is forwarded');
   if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/other']) {
     fail('refreshSwagger allowlist');
+  }
+  if (getSwaggerSpec().paths['/v1/asset/x'] || getSwaggerSpec().paths['/v1/asset/{id}']) {
+    fail('refreshSwagger must drop non-exact list paths');
   }
   const refreshPaths = cacheRefreshPaths();
   if (!refreshPaths.includes('/') || !refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
