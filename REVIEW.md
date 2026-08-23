@@ -117,17 +117,19 @@ function unless the reviewer grants that in writing.
 
 ## 12. Known routes: 100ms. Unknown routes: forwarded
 
-This process knows a fixed set of local GET routes (version, swagger
-snapshot, fresh GET cache, optional Postgres). Every **known** HTTP
-response must finish within 100ms. Fail if `MAX_RESPONSE_MS` is not 100,
-if `REQUEST_TIMEOUT_MS` can exceed 100 for background refresh, if the
-inbound budget is missing on a known route, if a known route is forwarded
-to the backend or waits on any system that cannot guarantee 100ms, if a
-deadline miss on a known route does not emit an `ERROR` log, if the change
-adds a known path that cannot finish in 100ms, or if a **known-route**
-test round-trip is allowed to take longer. Forwarding a known route is a
-hard fail: it cannot guarantee 100ms. A slower ping of a known route is a
-hard bug, not a performance note.
+This process knows a fixed listed set of local GET/HEAD routes (version,
+swagger snapshot, fresh GET/HEAD cache, optional Postgres). Every **known**
+HTTP response must finish within 100ms. Fail if `MAX_RESPONSE_MS` is not 100,
+if `REQUEST_TIMEOUT_MS` can exceed 100 for background refresh, if the inbound
+budget is missing on a known route, if a listed route is forwarded or waits on
+`BACKEND_URL` on the request path, if a deadline miss on a known route does not
+emit an `ERROR` log, if the change adds a known path that cannot finish in
+100ms, or if a **known-route** test round-trip is allowed to take longer.
+Forwarding a listed route is a hard fail.
+
+Fail if the catalog says `prefix` or `exact` but the code forwards a matching
+nested GET/HEAD request or an authenticated listed GET. Listed authenticated
+GETs must not read the unauthenticated GET cache.
 
 Unknown routes (everything this process does not answer itself) **must**
 be forwarded to `BACKEND_URL`. They have no 100ms rule. This repository

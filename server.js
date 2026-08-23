@@ -77,15 +77,15 @@ try {
 }
 
 function cacheKey(req) {
-  return req.method + ' ' + (req.url ?? '/').split('?')[0];
+  const method = req.method === 'HEAD' ? 'GET' : req.method;
+  return method + ' ' + (req.url ?? '/').split('?')[0];
 }
 
 function isCacheable(req) {
-  if (req.method !== 'GET') return false;
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (req.headers.authorization) return false;
   const path = (req.url ?? '/').split('?')[0];
-  if (path === '/' || path === '/version' || path === '/swagger' || path === '/swagger-json') return true;
-  return CACHE_PREFIXES.includes(path);
+  return isServedPath(path);
 }
 
 function getCached(key) {
@@ -211,24 +211,13 @@ const EXACT_GET_PATHS = [
 function isServedPath(path) {
   const p = (path ?? '/').split('?')[0];
   if (EXACT_GET_PATHS.includes(p)) return true;
-  return CACHE_PREFIXES.includes(p);
+  return CACHE_PREFIXES.some((prefix) => p === prefix || p.startsWith(prefix + '/'));
 }
 
 function isKnownLocalRequest(req) {
-  if (req.method !== 'GET') return false;
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   const path = (req.url ?? '/').split('?')[0];
-  if (
-    path === '/version' ||
-    path === '/swagger' ||
-    path === '/swagger/' ||
-    path === '/swagger-ui' ||
-    path === '/swagger-ui/' ||
-    path === '/swagger-json' ||
-    path === '/swagger-json/'
-  ) {
-    return true;
-  }
-  return isCacheable(req);
+  return isServedPath(path);
 }
 
 async function refreshSwagger() {
@@ -240,7 +229,7 @@ async function refreshSwagger() {
       if (!isServedPath(p)) continue;
       paths[p] = ops;
     }
-    swaggerSpec = { ...got.json, paths, info: { ...(got.json.info || {}), title: 'DFX API' } };
+    swaggerSpec = { ...got.json, paths, info: { ...(got.json.info ?? {}), title: 'DFX API' } };
   } catch (err) {
     console.error('swagger refresh', err.message);
   }
@@ -279,6 +268,10 @@ function sendJson(res, status, body, via, extraHeaders) {
     'x-front-api': via,
     'access-control-allow-origin': '*',
   }, extraHeaders ?? {}));
+  if (res.req && res.req.method === 'HEAD') {
+    res.end();
+    return;
+  }
   res.end(buf);
 }
 
@@ -293,7 +286,7 @@ function highlightJson(obj) {
 
 function sendVersion(req, res, obj, via) {
   if (!canWrite(res)) return;
-  if (String(req.headers.accept || '').includes('text/html')) {
+  if (String(req.headers.accept ?? '').includes('text/html')) {
     const html = Buffer.from(
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><title></title>' +
         '<style>' +
@@ -309,6 +302,10 @@ function sendVersion(req, res, obj, via) {
       'content-length': html.length,
       'x-front-api': via,
     });
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
     res.end(html);
     return;
   }
@@ -411,7 +408,10 @@ function proxy(req, res) {
 }
 
 function cacheRefreshPaths() {
-  return ['/', ...CACHE_PREFIXES];
+  const roots = ['/', ...CACHE_PREFIXES];
+  const paths = swaggerSpec?.paths;
+  if (!paths) return roots;
+  return [...new Set([...roots, ...Object.keys(paths).filter((path) => isServedPath(path))])];
 }
 
 async function refreshCache() {
@@ -433,12 +433,12 @@ const server = http.createServer((req, res) => {
   }
   attachResponseBudget(req, res);
   const path = (req.url ?? '/').split('?')[0];
-  if (path === '/version' && req.method === 'GET') {
+  if (path === '/version') {
     sendVersion(req, res, localVersion(), 'local');
     return;
   }
 
-  if ((path === '/swagger' || path === '/swagger/' || path === '/swagger-ui' || path === '/swagger-ui/') && req.method === 'GET') {
+  if (path === '/swagger' || path === '/swagger/' || path === '/swagger-ui' || path === '/swagger-ui/') {
     if (!swaggerSpec) {
       sendJson(res, 503, { statusCode: 503, message: 'swagger snapshot empty' }, 'local');
       return;
@@ -446,11 +446,15 @@ const server = http.createServer((req, res) => {
     const html = Buffer.from(swaggerHtml());
     if (!canWrite(res)) return;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': html.length, 'x-front-api': 'local' });
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
     res.end(html);
     return;
   }
 
-  if ((path === '/swagger-json' || path === '/swagger-json/') && req.method === 'GET') {
+  if (path === '/swagger-json' || path === '/swagger-json/') {
     if (!swaggerSpec) {
       sendJson(res, 503, { statusCode: 503, message: 'swagger snapshot empty' }, 'local');
       return;
@@ -459,24 +463,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const cacheable = isCacheable(req);
   const key = cacheKey(req);
-  const hit = getCached(key);
-  if (hit && Date.now() <= hit.exp) {
-    if (!canWrite(res)) return;
-    const headers = { ...hit.headers, 'x-front-api': 'hit' };
-    res.writeHead(hit.status, headers);
-    res.end(hit.body);
-    return;
+  if (cacheable) {
+    const hit = getCached(key);
+    if (hit && Date.now() <= hit.exp) {
+      if (!canWrite(res)) return;
+      const headers = { ...hit.headers, 'content-length': hit.body.length, 'x-front-api': 'hit' };
+      res.writeHead(hit.status, headers);
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      res.end(hit.body);
+      return;
+    }
   }
 
-  if (pool && req.method === 'GET' && !req.headers.authorization && DB_READ[path]) {
+  if (pool && DB_READ[path]) {
     tryDbRead(path)
       .then((body) => {
         if (!body) {
           rejectUnserved(res);
           return;
         }
-        putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
+        if (cacheable) {
+          putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
+        }
         sendJson(res, 200, body, 'db');
       })
       .catch((err) => {

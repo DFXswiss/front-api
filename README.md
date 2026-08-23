@@ -1,6 +1,6 @@
 # front-api
 
-Public HTTP layer in front of the DFX backend. Known routes (`/version`, a filtered swagger snapshot, GET cache, optional Postgres reads for country/language) are answered locally within 100ms and never wait on `BACKEND_URL`. Everything else is forwarded.
+Public HTTP layer in front of the DFX backend. Listed routes (`/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded.
 
 ## Run
 
@@ -36,17 +36,18 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 
 ## Local answers
 
-- `GET /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`)
-- `GET /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json` — filtered swagger snapshot from the backend; empty snapshot returns 503
-- GET cache (default 5 minutes) for `/` and the public list roots `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`)
-- Optional Postgres reads for `GET /v1/country` and `GET /v1/language` when `SQL_HOST` is set
+- `GET`/`HEAD /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`); HEAD has an empty body
+- `GET`/`HEAD /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json`, `/swagger-json/` — filtered swagger snapshot from the upstream HTTP backend; an empty snapshot returns 503 locally
+- GET/HEAD cache (default 5 minutes) for `/` and the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths under these prefixes are listed. HEAD follows the same local rules as GET and has an empty body.
+- Optional Postgres reads for `GET`/`HEAD /v1/country` and `GET`/`HEAD /v1/language` when `SQL_HOST` is set
+- An authenticated listed GET/HEAD never reads the unauthenticated GET cache. Without another local source it returns `503` `not served`; it is never forwarded.
 
 Only fresh cache hits are served for known GETs. The cache is filled in the
 background, not during a client request. After the TTL the next known GET
 is `503` `not served` until a background refresh succeeds — never an
 expired cache body, never a live backend wait on that request.
 
-Everything this process does not know is forwarded to `BACKEND_URL` with
+Everything this process does not list is forwarded to `BACKEND_URL` with
 no 100ms rule. This repository does not name those routes.
 
 Every **known** HTTP response must finish within 100ms. Forwarding a known

@@ -1,6 +1,6 @@
 {
   "title": "Offered routes: usage and frontend E2E",
-  "rules": "Every path this process answers itself has a row. usedIn is a public consumer repo+file, or unidentified:true with a note when no public call site is named. e2e is a frontend-inclusive E2E in a public repo (any branch), or unidentified:true when none is named. This repo's CI checks fields only and does not run foreign suites. Private repositories are not named. Backend routes this process does not serve are not listed.",
+  "rules": "Every path this process answers itself has a row. Exact rows list only their names and aliases; prefix rows also list every nested path. Listed GET/HEAD requests are answered locally; a miss is 503 not served, never forwarded. usedIn is a public consumer repo+file, or unidentified:true with a note when no public call site is named. e2e is a frontend-inclusive E2E in a public repo (any branch), or unidentified:true when none is named. This repo's CI checks fields only and does not run foreign suites. Private repositories are not named. Backend routes this process does not serve are not listed.",
   "routes": [
     {
       "method": "GET",
@@ -82,12 +82,12 @@
     {
       "method": "GET",
       "path": "/v1/asset",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
           "path": "packages/react/src/hooks/asset.hook.ts",
-          "note": "GET AssetUrl.get (asset). The exact list root is served from the background GET cache; a miss is 503 not served."
+          "note": "GET AssetUrl.get (asset). This prefix and its nested paths are served from the background GET cache; a miss is 503 not served, never forwarded."
         },
         {
           "repo": "DFXswiss/services",
@@ -106,7 +106,7 @@
     {
       "method": "GET",
       "path": "/v1/fiat",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -130,7 +130,7 @@
     {
       "method": "GET",
       "path": "/v1/country",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -154,7 +154,7 @@
     {
       "method": "GET",
       "path": "/v1/language",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -178,11 +178,11 @@
     {
       "method": "GET",
       "path": "/v1/statistic",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Exact list root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "Prefix on the swagger allowlist. The root and nested paths are served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
@@ -195,11 +195,11 @@
     {
       "method": "GET",
       "path": "/v1/coin",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Exact list root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "Prefix on the swagger allowlist. The root and nested paths are served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
@@ -212,24 +212,24 @@
     {
       "method": "GET",
       "path": "/v1/setting",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Exact list root GET /v1/setting is served from the background cache."
+          "note": "This prefix, including nested paths, is served from the background GET cache. A miss is 503 not served, never forwarded."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that GETs the list root /v1/setting live."
+          "note": "No frontend E2E named that GETs the /v1/setting prefix live. Required before changing this prefix."
         }
       ]
     },
     {
       "method": "GET",
       "path": "/v1/bank",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -247,11 +247,11 @@
     {
       "method": "GET",
       "path": "/v1/app",
-      "match": "exact",
+      "match": "prefix",
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Exact list root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. No named call site in DFXswiss/packages."
+          "note": "Prefix on the swagger allowlist. The root and nested paths are served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages."
         }
       ],
       "e2e": [
