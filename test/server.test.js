@@ -467,8 +467,9 @@ async function main() {
     got = await request(port, 'GET', '/v1/asset/x', undefined, undefined, 0);
     if (got.body.indexOf('not served') >= 0) fail('non-exact list path must be forwarded');
 
-    const forwarded = seen.filter((row) => row.path === '/v1/other' || row.path === '/v1/asset/x');
-    if (forwarded.length < 3) fail('unknown_forward: a path outside the allowlist must reach the backend');
+    if (!seen.some((row) => row.method === 'PUT' && row.path === '/v1/other')) fail('unknown_forward put');
+    if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/other')) fail('unknown_forward get');
+    if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/asset/x')) fail('unknown_forward non-exact list path');
 
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
