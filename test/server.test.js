@@ -189,10 +189,12 @@ async function main() {
     maybeExitAfterBoot,
     orFallback,
     backendPortFor,
+    REQUEST_TIMEOUT_MS,
     server,
   } = s;
 
   if (maybeExitAfterBoot() !== false) fail('maybeExitAfterBoot off');
+  if (REQUEST_TIMEOUT_MS !== 50) fail('REQUEST_TIMEOUT_MS env');
   if (orFallback('', 'x') !== 'x' || orFallback('a', 'x') !== 'a') fail('orFallback');
   if (orFallback(undefined, 'x') !== 'x' || orFallback(null, 'x') !== 'x') fail('orFallback nullish');
   const { URL } = require('url');
