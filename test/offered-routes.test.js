@@ -98,7 +98,7 @@ for (const key of seen) {
   if (!expectedKeys.has(key)) fail('unexpected catalog row: ' + key);
 }
 
-if (isServedPath('/v1/user')) fail('isServedPath unexpectedly true for /v1/user');
-if (catalogCovers('GET', '/v1/user')) fail('unserved /v1/user must not be in the catalog');
+if (isServedPath('/v1/other')) fail('isServedPath unexpectedly true outside the allowlist');
+if (catalogCovers('GET', '/v1/other')) fail('a path outside the allowlist must not be in the catalog');
 
 console.log('ok offered-routes.json', catalog.routes.length, 'rows');

@@ -162,15 +162,13 @@ async function main() {
     { id: 11, name: 'EUR' },
     { id: 12, name: 'USD' },
   ];
-  const quote = { rate: 2, fees: { rate: 0.01, fixed: 0 } };
-  const ram = { price: 1 };
   const swagger = {
     paths: {
       '/v1/asset': { get: {} },
-      '/v1/user': { get: {} },
-      '/version': { get: {} },
-      '/v1/setting/infoBanner': { get: {} },
+      '/v1/asset/x': { get: {} },
       '/v1/asset/{id}': { get: {} },
+      '/v1/other': { get: {} },
+      '/version': { get: {} },
       '/v1/bank': { post: {} },
     },
   };
@@ -180,29 +178,17 @@ async function main() {
     jsonHandler({
       '/v1/asset': assets,
       '/v1/fiat': fiats,
-      '/v1/buy/quote': quote,
-      '/v1/sell/quote': quote,
-      '/v1/swap/quote': quote,
-      '/v1/realunit/quote/buyPrice': ram,
-      '/v1/realunit/quote/buyShares': ram,
-      '/v1/realunit/quote/info': ram,
-      '/v1/realunit/quote/price': ram,
-      '/v1/realunit/brokerbot/buyPrice': ram,
-      '/v1/realunit/brokerbot/buyShares': ram,
-      '/v1/realunit/brokerbot/info': ram,
-      '/v1/realunit/brokerbot/price': ram,
       '/': { root: 1 },
       '/swagger-json': swagger,
       '/v1/statistic': { ok: 1 },
       '/v1/setting': { ok: 1 },
-      '/v1/setting/infoBanner': { banner: 1 },
       '/v1/bank': { ok: 1 },
       '/v1/app': (req, res) => {
         res.writeHead(500, { 'content-type': 'application/json' });
         res.end('{"ok":false}');
       },
       '/v1/coin': { ok: 1 },
-      '/v1/user': { user: 1 },
+      '/v1/other': { other: 1 },
     }, seen),
   );
   const bPort = await listen(backend);
@@ -285,31 +271,26 @@ async function main() {
 
   if (!isServedPath('/version') || !isServedPath('/swagger/') || !isServedPath('/swagger-json/')) fail('isServedPath meta');
   if (!isServedPath('/swagger-ui') || !isServedPath('/swagger-ui/')) fail('isServedPath ui');
-  if (isServedPath('/v1/buy/quote') || isServedPath('/v1/sell/quote') || isServedPath('/v1/swap/quote')) {
-    fail('isServedPath quotes');
-  }
+  if (isServedPath('/v1/other')) fail('isServedPath outside allowlist');
   if (!isServedPath('/v1/asset') || !isServedPath(undefined)) fail('isServedPath');
-  if (isServedPath('/v1/asset/{id}')) fail('isServedPath template');
-  if (isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
-  if (isServedPath('/v1/user')) fail('isServedPath user');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');
   if (!isKnownLocalRequest({ method: 'GET', url: '/version', headers: {} })) fail('known version');
-  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/buy/quote', headers: {} })) fail('unknown quote');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/user', headers: {} })) fail('unknown user');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('unknown auth GET');
-  if (isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('unknown HEAD');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('unknown asset id');
+  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/other', headers: {} })) fail('unknown method');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('unknown path');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('auth GET is not a cache hit path');
+  if (isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('non-GET is not known local');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/x', headers: {} })) fail('non-exact list path is not known local');
   if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
-  if (isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
+  if (isCacheable({ method: 'GET', url: '/v1/asset/x', headers: {} })) fail('cache non-exact list path');
   if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD');
   if (!isCacheable({ method: 'GET', url: '/version', headers: {} })) fail('cache version');
   if (!isCacheable({ method: 'GET', url: '/swagger', headers: {} })) fail('cache swagger');
   if (!isCacheable({ method: 'GET', url: '/swagger-json', headers: {} })) fail('cache swagger-json');
   if (isCacheable({ method: 'PUT', url: '/v1/asset', headers: {} })) fail('cache PUT');
   if (isCacheable({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('cache auth');
-  if (isCacheable({ method: 'GET', url: '/v1/user', headers: {} })) fail('cache user');
+  if (isCacheable({ method: 'GET', url: '/v1/other', headers: {} })) fail('cache outside allowlist');
   if (cacheKey({ method: 'GET', url: '/a' }) !== 'GET /a') fail('cacheKey');
   if (cacheKey({ method: 'GET', url: '/v1/asset?x=1' }) !== 'GET /v1/asset') fail('cacheKey query');
   if (cacheKey({ method: 'GET', url: undefined }) !== 'GET /') fail('cacheKey empty');
@@ -383,17 +364,17 @@ async function main() {
   setPool(null);
 
   await refreshSwagger();
-  if (isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('nested swagger GET is unknown');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('infoBanner is forwarded');
-  if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/user']) {
+  if (isCacheable({ method: 'GET', url: '/v1/other', headers: {} })) fail('outside allowlist is unknown');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('outside allowlist is forwarded');
+  if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/other']) {
     fail('refreshSwagger allowlist');
   }
-  if (getSwaggerSpec().paths['/v1/setting/infoBanner'] || getSwaggerSpec().paths['/v1/asset/{id}']) {
-    fail('refreshSwagger must drop nested and templates');
+  if (getSwaggerSpec().paths['/v1/asset/x'] || getSwaggerSpec().paths['/v1/asset/{id}']) {
+    fail('refreshSwagger must drop non-exact list paths');
   }
   const refreshPaths = cacheRefreshPaths();
   if (!refreshPaths.includes('/') || !refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
-  if (refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
+  if (refreshPaths.includes('/v1/other')) fail('cacheRefreshPaths outside allowlist');
   if (refreshPaths.includes('/version')) fail('cacheRefreshPaths local version');
 
   const port = await listen(server);
@@ -428,7 +409,7 @@ async function main() {
       },
     });
     livePipe.method = 'GET';
-    livePipe.url = '/v1/user';
+    livePipe.url = '/v1/other';
     livePipe.headers = { host: '127.0.0.1' };
     const liveRes = fakeRes();
     proxy(livePipe, liveRes);
@@ -449,7 +430,7 @@ async function main() {
       },
     });
     racedReq.method = 'GET';
-    racedReq.url = '/v1/user';
+    racedReq.url = '/v1/other';
     racedReq.headers = { host: '127.0.0.1' };
     proxy(racedReq, raced);
     raced.headersSent = true;
@@ -470,7 +451,7 @@ async function main() {
       },
     });
     closeReq.method = 'GET';
-    closeReq.url = '/v1/user';
+    closeReq.url = '/v1/other';
     closeReq.headers = { host: '127.0.0.1' };
     proxy(closeReq, closeRes);
     closeRes.emit('finish');
@@ -479,27 +460,16 @@ async function main() {
     closeReq.emit('aborted');
     await sleep(50);
 
-    const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
-    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy buy body');
-    got = await request(port, 'PUT', '/v1/sell/quote', buyBody, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy sell body');
-    const swapBody = { sourceAsset: { id: 1 }, targetAsset: { id: 2 }, amount: 0.01 };
-    got = await request(port, 'PUT', '/v1/swap/quote', swapBody, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy swap body');
-    got = await request(port, 'GET', '/v1/realunit/quote/price', undefined, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('price') < 0) fail('quote_proxy realunit');
-    got = await request(port, 'GET', '/v1/user', undefined, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('user') < 0) fail('unknown GET must be forwarded');
-    got = await request(port, 'GET', '/v1/asset/1', undefined, undefined, 0);
-    if (got.body.indexOf('not served') >= 0) fail('parameterized GET must be forwarded');
+    let got = await request(port, 'PUT', '/v1/other', { n: 1 }, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward put body');
+    got = await request(port, 'GET', '/v1/other', undefined, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward get body');
+    got = await request(port, 'GET', '/v1/asset/x', undefined, undefined, 0);
+    if (got.body.indexOf('not served') >= 0) fail('non-exact list path must be forwarded');
 
-    const forwarded = seen.filter((row) =>
-      (row.method === 'PUT' &&
-        (row.path === '/v1/buy/quote' || row.path === '/v1/sell/quote' || row.path === '/v1/swap/quote')) ||
-      (row.method === 'GET' && (row.path === '/v1/realunit/quote/price' || row.path === '/v1/user')),
-    );
-    if (forwarded.length < 4) fail('quote_forward: unknown routes must reach the backend');
+    if (!seen.some((row) => row.method === 'PUT' && row.path === '/v1/other')) fail('unknown_forward put');
+    if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/other')) fail('unknown_forward get');
+    if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/asset/x')) fail('unknown_forward non-exact list path');
 
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
@@ -635,12 +605,9 @@ async function main() {
     await refreshCache();
     if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
     if (!getCached('GET /')) fail('refreshCache must fill GET /');
-    if (getCached('GET /v1/setting/infoBanner')) fail('refreshCache must not fill nested swagger GET');
+    if (getCached('GET /v1/other')) fail('refreshCache must not fill a path outside the allowlist');
     got = await request(port, 'GET', '/');
     if (got.status !== 200 || got.body.indexOf('root') < 0) fail('GET / from background cache');
-    got = await request(port, 'GET', '/v1/setting/infoBanner', undefined, undefined, 0);
-    if (got.body.indexOf('not served') >= 0) fail('nested swagger GET must be forwarded');
-    if (got.status !== 200 || got.body.indexOf('banner') < 0) fail('nested swagger GET forwarded body');
     got = await request(port, 'GET', '/v1/asset?x=1');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
     got = await request(port, 'HEAD', '/v1/asset', undefined, undefined, 0);
@@ -660,11 +627,10 @@ async function main() {
     rejectUnserved(fakeRes());
     const blockedProxy = fakeRes();
     blockedProxy.headersSent = true;
-    proxy({ method: 'GET', url: '/v1/user', headers: {}, pipe() {} }, blockedProxy);
-    got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
-    if (got.status !== 503) fail('quote_proxy dead backend');
-    if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
-    if (got.body.includes('quote unavailable')) fail('quote_proxy must not say quote unavailable');
+    proxy({ method: 'GET', url: '/v1/other', headers: {}, pipe() {} }, blockedProxy);
+    got = await request(port, 'PUT', '/v1/other', { n: 1 }, undefined, 0);
+    if (got.status !== 503) fail('unknown_forward dead backend');
+    if (!got.body.includes('backend-api unavailable')) fail('unknown_forward dead body');
     if (got.body.includes('not served')) fail('unknown dead backend must still be forwarded');
     const late = fakeRes();
     const lateReq = new Readable({
@@ -673,7 +639,7 @@ async function main() {
       },
     });
     lateReq.method = 'GET';
-    lateReq.url = '/v1/user';
+    lateReq.url = '/v1/other';
     lateReq.headers = {};
     proxy(lateReq, late);
     late.headersSent = true;

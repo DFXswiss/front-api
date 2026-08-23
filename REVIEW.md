@@ -78,7 +78,7 @@ CONTRIBUTING.md or lands untested.
 
 ## 10. Outward behaviour of this layer
 
-If cache, 503 body, `x-front-api`, self-answered paths, or quote source change:
+If cache, 503 body, `x-front-api`, or self-answered paths change:
 it is said in the PR body, a pin is present, and the swagger allowlist matches.
 
 ## 11. Usage catalog and frontend E2E
@@ -90,7 +90,7 @@ when a served path has no row or a row has empty fields. That is not
 enough to merge.
 
 - Fail if the pull request adds, removes, or changes how a self-answered
-  path answers (status, body, cache, quote source, allowlist) and that
+  path answers (status, body, cache, allowlist) and that
   row's `e2e` is `unidentified` **or** the named E2E does not actually
   cover that function **including the frontend**.
 - The E2E may live in another public repository. It need not be on that
@@ -129,8 +129,9 @@ test round-trip is allowed to take longer. Forwarding a known route is a
 hard fail: it cannot guarantee 100ms. A slower ping of a known route is a
 hard bug, not a performance note.
 
-Unknown routes (everything this process does not answer itself, including
-quotes and WebSocket upgrades) **must** be forwarded to `BACKEND_URL`.
-They have no 100ms rule. Fail if an unknown request is answered with
-`503` `not served` instead of being forwarded, or if the 100ms budget is
-attached to the forward path.
+Unknown routes (everything this process does not answer itself) **must**
+be forwarded to `BACKEND_URL`. They have no 100ms rule. This repository
+never names them. Fail if an unknown request is answered with `503`
+`not served` instead of being forwarded, if the 100ms budget is attached
+to the forward path, or if the diff names a route outside the known
+allowlist in docs, comments, catalog notes, or PR text.

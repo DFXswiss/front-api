@@ -127,8 +127,8 @@ When applicable, every pull request must include:
    **not** a grant to change that path. Private repositories are not named.
 5. **A note in the PR body** when the outward behaviour of this layer changes
    (cache, 503 bodies, `x-front-api`, which paths are answered here versus
-   forwarded, quote source). Do not name private repositories. Public consumer
-   paths belong in `offered-routes.json`.
+   forwarded). Do not name private repositories. Do not name unknown routes.
+   Public consumer paths belong in `offered-routes.json`.
 
 Missing any applicable item = changes requested.
 
@@ -157,15 +157,15 @@ Missing any applicable item = changes requested.
   guarantee 100ms. A cache miss on a known GET is `503` `not served`
   immediately — never a live backend fetch on that request.
 - Every other request (routes this process does **not** know) is forwarded
-  to `BACKEND_URL`. Forwarded requests have **no** 100ms rule. Quotes and
-  WebSocket upgrades are unknown here and are forwarded.
+  to `BACKEND_URL`. Forwarded requests have **no** 100ms rule. Unknown
+  routes are **never named** in this repository: they are only the
+  complement of the known allowlist.
 - The backend is contacted on the request path only for unknown routes.
   Swagger snapshot and GET-cache refresh stay **off** the request path and
   exist only to serve known GETs from local state.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
-- Authenticated requests are never answered from the GET cache; those
-  cache-prefix GETs are unknown here and are forwarded. `GET /version`
+- Authenticated requests are never answered from the GET cache. `GET /version`
   and swagger remain local even with `Authorization`.
 - Never serve an expired cache body.
 - Every **known** HTTP response from this process must complete within

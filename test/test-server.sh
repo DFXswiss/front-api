@@ -5,15 +5,13 @@
 # Arms:
 #   local one-command start (stub + process)          local_start
 #   swagger snapshot empty → 503 local body          swagger_empty
-#   PUT /v1/buy/quote is forwarded                   quote_proxy
-#   quotes must reach the backend                    quote_forward
+#   a path outside the allowlist is forwarded        unknown_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout on background refresh only  refresh_timeout
-#   no in-memory quotes / stale cache                quotes_gone
+#   no in-memory special-case book / stale cache     quotes_gone
 #   known GET ≤ 100ms; unknown is forwarded          max_response_100
 #   known miss is 503 not served                     known_local
-#   quotes/upgrades forwarded                        unknown_forward
 #   c8 100% lines/functions/branches/statements      coverage_100
 #   c8 --all includes every new production .js file  coverage_all
 set -euo pipefail
@@ -44,7 +42,8 @@ done
 if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; then
   fail "server.js must not serve stale cache"
 fi
-grep -q 'quote_forward' "$test_js" || fail "quote_forward: pin missing"
+grep -q 'unknown_forward' "$test_js" || fail "unknown_forward: pin missing"
+grep -Fq 'never named' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must forbid naming unknown routes"
 grep -Fq 'maxMs === undefined ? 100 : maxMs' "$test_js" || fail "known_local: helper 100ms cap is known routes only"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
 grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
@@ -93,7 +92,7 @@ grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill of
 grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "known_local: background refresh must include GET /"
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set is list roots only"
 grep -Fq "req.method !== 'GET'" "$server_js" || fail "known_local: GET cache must not treat HEAD as cacheable"
-grep -Fq 'CACHE_PREFIXES.includes(path)' "$server_js" || fail "known_local: list roots are exact; parameterized paths are forwarded"
+grep -Fq 'CACHE_PREFIXES.includes(path)' "$server_js" || fail "known_local: list roots are exact matches"
 grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
 grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
 grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"

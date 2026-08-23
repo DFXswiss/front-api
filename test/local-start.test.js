@@ -118,11 +118,11 @@ async function main() {
     const asset = await request(port, 'GET', '/v1/asset');
     const assetExtra = await request(port, 'GET', '/v1/asset/extra');
     const swagger = await request(port, 'GET', '/swagger-json');
-    const quote = await request(port, 'PUT', '/v1/buy/quote', '{"amount":1}');
+    const other = await request(port, 'PUT', '/v1/other', '{"amount":1}');
     const country = await request(port, 'GET', '/v1/country');
     const language = await request(port, 'GET', '/v1/language');
 
-    for (const response of [asset, assetExtra, swagger, quote, country, language]) {
+    for (const response of [asset, assetExtra, swagger, other, country, language]) {
       assert(response.statusCode === 200, 'stub response status must be 200');
       assert(response.duration <= 100, `stub response exceeded 100ms: ${response.duration}ms`);
       try {
@@ -157,13 +157,13 @@ async function main() {
     assert(Array.isArray(language.json), 'language fixture must be an array');
     assert(language.json[0].symbol === 'EN', 'language fixture symbol must be EN');
 
-    assert(quote.json.price === 1, 'quote price must be 1');
-    assert(quote.json.from.amount === 1, 'quote from amount must be 1');
-    assert(quote.json.to.amount === 1, 'quote to amount must be 1');
+    assert(other.json.proxied === true, 'unknown path must be answered by the stub as forwarded');
+    assert(other.json.method === 'PUT', 'unknown stub method must echo PUT');
+    assert(other.json.path === '/v1/other', 'unknown stub path must echo the request path');
 
     assert(swagger.json.info.title, 'swagger info.title must be present');
     assert(swagger.json.paths['/v1/asset'] !== undefined, 'swagger must contain /v1/asset');
-    assert(swagger.json.paths['/v1/user'] === undefined, 'swagger must not contain /v1/user');
+    assert(Object.keys(swagger.json.paths).every((p) => p === '/version' || p === '/' || PREFIXES.includes(p)), 'swagger must only list known paths');
     assert(swagger.json.paths['/version'] !== undefined, 'swagger must contain /version');
     for (const prefix of PREFIXES) {
       assert(swagger.json.paths[prefix] !== undefined, `swagger must contain ${prefix}`);
