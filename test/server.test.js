@@ -466,6 +466,8 @@ async function main() {
 
     got = await request(port, 'GET', '/v1/asset');
     if (got.status !== 200 || got.body.indexOf('BTC') < 0) fail('ttl_expire: prime');
+    got = await request(port, 'GET', '/v1/asset');
+    if (got.headers['x-front-api'] !== 'hit') fail('ttl_expire: cache hit before expiry');
     await new Promise((r) => setTimeout(r, 250));
     await close(backend);
     got = await request(port, 'GET', '/v1/asset');
