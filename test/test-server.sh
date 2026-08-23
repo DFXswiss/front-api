@@ -4,6 +4,8 @@
 # Arms:
 #   swagger snapshot empty → 503 local body          swagger_empty
 #   PUT /v1/buy/quote → 503 backend unavailable      quote_proxy
+#   mock records forwarded method/path/body          quote_forward
+#   expired GET /v1/asset after TTL → 503            ttl_expire
 #   attachRequestTimeout → callback + destroy        proxy_timeout
 #   no in-memory quotes / stale cache                quotes_gone
 #   c8 100% lines/functions/branches/statements      coverage_100
@@ -36,6 +38,9 @@ done
 if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; then
   fail "server.js must not serve stale cache"
 fi
+grep -q 'quote_forward' "$test_js" || fail "quote_forward: pin missing"
+grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
+grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
 
 c8rc="$repo_root/.c8rc.json"
 [ -f "$c8rc" ] || fail "coverage_100: missing .c8rc.json"

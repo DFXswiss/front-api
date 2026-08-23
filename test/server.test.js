@@ -84,22 +84,34 @@ function fakeRes() {
   };
 }
 
-function jsonHandler(routes) {
+function jsonHandler(routes, seen) {
   return (req, res) => {
-    const p = (req.url || '/').split('?')[0];
-    const hit = routes[p];
-    if (typeof hit === 'function') {
-      hit(req, res);
-      return;
-    }
-    if (hit === undefined) {
-      res.writeHead(404, { 'content-type': 'application/json' });
-      res.end('{}');
-      return;
-    }
-    const body = Buffer.from(typeof hit === 'string' ? hit : JSON.stringify(hit));
-    res.writeHead(200, { 'content-type': 'application/json', 'transfer-encoding': 'chunked' });
-    res.end(body);
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const p = (req.url || '/').split('?')[0];
+      if (seen) {
+        seen.push({
+          method: req.method,
+          path: p,
+          body: Buffer.concat(chunks).toString('utf8'),
+          contentType: req.headers['content-type'] ?? '',
+        });
+      }
+      const hit = routes[p];
+      if (typeof hit === 'function') {
+        hit(req, res);
+        return;
+      }
+      if (hit === undefined) {
+        res.writeHead(404, { 'content-type': 'application/json' });
+        res.end('{}');
+        return;
+      }
+      const body = Buffer.from(typeof hit === 'string' ? hit : JSON.stringify(hit));
+      res.writeHead(200, { 'content-type': 'application/json', 'transfer-encoding': 'chunked' });
+      res.end(body);
+    });
   };
 }
 
@@ -119,6 +131,7 @@ async function main() {
     paths: { '/v1/asset': { get: {} }, '/v1/user': { get: {} }, '/version': { get: {} } },
   };
 
+  const seen = [];
   const backend = http.createServer(
     jsonHandler({
       '/v1/asset': assets,
@@ -140,14 +153,14 @@ async function main() {
       '/v1/bank': { ok: 1 },
       '/v1/app': { ok: 1 },
       '/v1/coin': { ok: 1 },
-    }),
+    }, seen),
   );
   const bPort = await listen(backend);
   process.env.BACKEND_URL = 'http://127.0.0.1:' + bPort;
   process.env.PORT = '0';
   process.env.REQUEST_TIMEOUT_MS = '50';
+  process.env.CACHE_TTL_MS = '2000';
   delete process.env.BIND;
-  delete process.env.CACHE_TTL_MS;
   delete process.env.CACHE_MAX;
   delete process.env.SQL_HOST;
   delete process.env.QUOTE_BOOK_REFRESH;
@@ -302,6 +315,24 @@ async function main() {
     got = await request(port, 'GET', '/v1/realunit/quote/price');
     if (got.status !== 200 || got.body.indexOf('"price":1') < 0) fail('quote_proxy realunit');
 
+    const forwarded = seen.filter((row) =>
+      (row.method === 'PUT' &&
+        (row.path === '/v1/buy/quote' || row.path === '/v1/sell/quote' || row.path === '/v1/swap/quote')) ||
+      (row.method === 'GET' && row.path === '/v1/realunit/quote/price'),
+    );
+    if (forwarded.length !== 4) fail('quote_forward: expected exactly 4 recorded requests');
+    const buyFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/buy/quote');
+    const sellFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/sell/quote');
+    const swapFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/swap/quote');
+    const ruFwd = forwarded.find((row) => row.method === 'GET' && row.path === '/v1/realunit/quote/price');
+    if (!buyFwd || !sellFwd || !swapFwd || !ruFwd) fail('quote_forward: method/path');
+    if (JSON.stringify(JSON.parse(buyFwd.body)) !== JSON.stringify(buyBody)) fail('quote_forward: buy body');
+    if (JSON.stringify(JSON.parse(sellFwd.body)) !== JSON.stringify(buyBody)) fail('quote_forward: sell body');
+    if (JSON.stringify(JSON.parse(swapFwd.body)) !== JSON.stringify(swapBody)) fail('quote_forward: swap body');
+    if (buyFwd.contentType.indexOf('application/json') < 0) fail('quote_forward: buy content-type');
+    if (sellFwd.contentType.indexOf('application/json') < 0) fail('quote_forward: sell content-type');
+    if (swapFwd.contentType.indexOf('application/json') < 0) fail('quote_forward: swap content-type');
+
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
     if (got.status !== 503) fail('swagger empty json');
@@ -433,7 +464,15 @@ async function main() {
     noUrlReq.headers = {};
     server.emit('request', noUrlReq, noUrl);
 
+    got = await request(port, 'GET', '/v1/asset');
+    if (got.status !== 200 || got.body.indexOf('BTC') < 0) fail('ttl_expire: prime');
+    got = await request(port, 'GET', '/v1/asset');
+    if (got.headers['x-front-api'] !== 'hit') fail('ttl_expire: cache hit before expiry');
+    await new Promise((r) => setTimeout(r, 2200));
     await close(backend);
+    got = await request(port, 'GET', '/v1/asset');
+    if (got.status !== 503) fail('ttl_expire: expected 503');
+    if (got.body.indexOf('BTC') >= 0) fail('ttl_expire: must not replay expired cache body');
     got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
     if (got.status !== 503) fail('quote_proxy dead backend');
     if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
