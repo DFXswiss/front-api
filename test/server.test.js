@@ -167,6 +167,7 @@ async function main() {
       '/v1/asset': { get: {} },
       '/v1/asset/x': { get: {} },
       '/v1/asset/{id}': { get: {} },
+      '/v1/setting/infoBanner': { get: {} },
       '/v1/other': { get: {} },
       '/version': { get: {} },
       '/v1/bank': { post: {} },
@@ -182,6 +183,7 @@ async function main() {
       '/swagger-json': swagger,
       '/v1/statistic': { ok: 1 },
       '/v1/setting': { ok: 1 },
+      '/v1/setting/infoBanner': { banner: 1 },
       '/v1/bank': { ok: 1 },
       '/v1/app': (req, res) => {
         res.writeHead(500, { 'content-type': 'application/json' });
@@ -277,12 +279,11 @@ async function main() {
   if (!isServedPath('/v1/setting/infoBanner')) fail('isServedPath nested setting');
   if (!isServedPath('/v1/asset/{id}')) fail('isServedPath template');
   if (isServedPath('/v1/assetfoo')) fail('isServedPath prefix boundary');
-  if (isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
-  if (isServedPath('/v1/user')) fail('isServedPath user');
+  if (isServedPath('/v1/other')) fail('isServedPath outside listed prefixes');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');
   if (!isKnownLocalRequest({ method: 'GET', url: '/version', headers: {} })) fail('known version');
-  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/buy/quote', headers: {} })) fail('unknown quote');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/user', headers: {} })) fail('unknown user');
+  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/other', headers: {} })) fail('unknown method');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('unknown path');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('known auth GET');
   if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('known HEAD');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('known asset id');
@@ -378,7 +379,7 @@ async function main() {
   await refreshSwagger();
   if (!isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('nested swagger GET is cacheable');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('infoBanner is listed');
-  if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/user']) {
+  if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/other']) {
     fail('refreshSwagger allowlist');
   }
   if (!getSwaggerSpec().paths['/v1/setting/infoBanner'] || !getSwaggerSpec().paths['/v1/asset/{id}']) {
@@ -472,18 +473,10 @@ async function main() {
     closeReq.emit('aborted');
     await sleep(50);
 
-    const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
-    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy buy body');
-    got = await request(port, 'PUT', '/v1/sell/quote', buyBody, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy sell body');
-    const swapBody = { sourceAsset: { id: 1 }, targetAsset: { id: 2 }, amount: 0.01 };
-    got = await request(port, 'PUT', '/v1/swap/quote', swapBody, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy swap body');
-    got = await request(port, 'GET', '/v1/realunit/quote/price', undefined, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('price') < 0) fail('quote_proxy realunit');
-    got = await request(port, 'GET', '/v1/user', undefined, undefined, 0);
-    if (got.status !== 200 || got.body.indexOf('user') < 0) fail('unknown GET must be forwarded');
+    let got = await request(port, 'PUT', '/v1/other', { n: 1 }, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward put body');
+    got = await request(port, 'GET', '/v1/other', undefined, undefined, 0);
+    if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward get body');
     const assetIdBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length;
     got = await request(port, 'GET', '/v1/asset/1');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('parameterized GET must be local miss');
