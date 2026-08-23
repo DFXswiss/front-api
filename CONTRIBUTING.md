@@ -146,6 +146,16 @@ Missing any applicable item = changes requested.
 - Authenticated requests are never answered from the GET cache.
 - Quotes are reverse-proxied to `BACKEND_URL`. This process does not keep a quote book.
 - A down backend always returns 503. Never serve an expired cache body.
+- Every HTTP response from this process must complete within **100ms**. That
+  bound is technical and always enforced, not a target. The process must cut
+  the request so the client never waits longer (`503` `response deadline
+  exceeded`) and must emit an `ERROR` log. It is **forbidden** to add code
+  that cannot finish in that budget: unbounded awaits, blocking work, uncapped
+  outbound waits, sleeps, or any other path that would let a ping exceed
+  100ms. The client-facing deadline is always 100ms, including the WebSocket
+  upgrade handshake until a completed `101`. A WebSocket after that handshake
+  is no longer an HTTP response. `REQUEST_TIMEOUT_MS` may only lower the
+  outbound wait to the backend, never raise it above 100ms.
 - Do not expose internals in responses (SQL credentials, backend hosts, or
   other secrets).
 
@@ -175,6 +185,12 @@ if CI is green.
 
 There is no production JavaScript in this repository that may ship below 100%
 coverage. The coverage gate is the CI job, not a review courtesy.
+
+There is no HTTP response this process may take longer than 100ms to finish.
+`test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline, the
+upgrade-handshake budget, the `ERROR` log, and the outbound cap; the Node
+suite rejects any helper round-trip over 100ms. A miss is a red `test` job,
+not a review note.
 
 Every path this process answers itself also needs **frontend E2E** coverage:
 a real UI flow that hits that function, listed in `offered-routes.json`.

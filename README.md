@@ -10,7 +10,7 @@ Public HTTP layer in front of the DFX backend. This process answers a fixed set 
 BACKEND_URL=http://127.0.0.1:3000 node server.js
 ```
 
-Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `CACHE_MAX`, `REQUEST_TIMEOUT_MS` (20000), `SQL_HOST` / `SQL_PORT` / `SQL_DB` / `SQL_USERNAME` / `SQL_PASSWORD` / `SQL_SSL`. `FRONT_API_EXIT_AFTER_BOOT=1` is for the coverage collection run only: the process exits shortly after listen.
+Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `CACHE_MAX`, `REQUEST_TIMEOUT_MS` (capped at 100; default 100), `SQL_HOST` / `SQL_PORT` / `SQL_DB` / `SQL_USERNAME` / `SQL_PASSWORD` / `SQL_SSL`. `FRONT_API_EXIT_AFTER_BOOT=1` is for the coverage collection run only: the process exits shortly after listen.
 
 ## Local answers
 
@@ -22,6 +22,11 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 Only fresh cache hits are served. After the TTL the next request fetches again. If that fetch cannot reach the backend, the response is 503 — never an expired cache body. A still-fresh cache hit is served without calling the backend.
 
 Everything else, including quotes, is reverse-proxied to `BACKEND_URL`. WebSocket upgrades are tunnelled the same way.
+
+Every HTTP response must finish within 100ms, including the WebSocket
+upgrade handshake. A slower response is a hard bug: the process answers
+`503` `response deadline exceeded` (or cuts the upgrade socket), emits an
+`ERROR` log, and CI fails. Code that cannot meet that bound is forbidden.
 
 ## Images
 

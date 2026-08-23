@@ -9,6 +9,7 @@
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout → callback + destroy        proxy_timeout
 #   no in-memory quotes / stale cache                quotes_gone
+#   every HTTP response ≤ 100ms                      max_response_100
 #   c8 100% lines/functions/branches/statements      coverage_100
 #   c8 --all includes every new production .js file  coverage_all
 set -euo pipefail
@@ -63,7 +64,25 @@ grep -q 'npm ci' "$wf" || fail "coverage_100: CI must npm ci"
 grep -q 'package-lock.json' "$repo_root/Dockerfile" || fail "coverage_100: image must use lockfile"
 grep -q 'npm ci --omit=dev' "$repo_root/Dockerfile" || fail "coverage_100: image must npm ci omit dev"
 grep -q 'require.main === module' "$server_js" || fail "boot only when main"
-grep -Fq 'orFallback(process.env.REQUEST_TIMEOUT_MS, 20000)' "$server_js" || fail "REQUEST_TIMEOUT_MS default"
+grep -Fq 'MAX_RESPONSE_MS = 100' "$server_js" || fail "max_response_100: constant missing"
+grep -q 'response deadline exceeded' "$server_js" || fail "max_response_100: deadline 503 missing"
+grep -Fq 'REQUEST_TIMEOUT_MS = outboundTimeoutMs(' "$server_js" || fail "max_response_100: REQUEST_TIMEOUT_MS must cap at MAX_RESPONSE_MS"
+grep -Fq 'if (!Number.isFinite(n) || n <= 0)' "$server_js" || fail "max_response_100: outbound timeout 0/NaN must not disable the cap"
+grep -q 'connectionTimeoutMillis: 90' "$server_js" || fail "max_response_100: pool acquire must not outlive the deadline"
+grep -Fq 'orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)' "$server_js" || fail "REQUEST_TIMEOUT_MS default cap"
+grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing"
+grep -q 'attachUpgradeBudget(req, socket, up)' "$server_js" || fail "max_response_100: upgrade handshake budget missing"
+grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
+grep -q 'isUpgradeHandshakeComplete' "$server_js" || fail "max_response_100: upgrade must settle only on a completed 101"
+grep -Fq "up.removeListener('data', onData)" "$server_js" || fail "max_response_100: handshake listener must not outlive the HTTP upgrade"
+grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
+grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
+grep -Fq 'if (!canWrite(res)) return;' "$server_js" || fail "max_response_100: writers must refuse after the deadline"
+grep -Fq 'if (!res.destroyed) req.destroy();' "$server_js" || fail "max_response_100: deadline must cut an unfinished drain"
+grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 503 must close the connection"
+grep -Fq "res.on('finish', () => p.destroy())" "$server_js" || fail "max_response_100: proxy must drop outbound when the response finishes"
+grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms"
+grep -q 'ERROR' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must require an ERROR log on a deadline miss"
 grep -q 'FRONT_API_EXIT_AFTER_BOOT=1' "$repo_root/test/run-main-coverage.sh" || fail "coverage_100: require.main collection missing"
 grep -q 'coverage:report' "$pkg" || fail "coverage_100: coverage:report script missing"
 grep -q -- '--check-coverage' "$pkg" || fail "coverage_100: check-coverage missing from package.json"

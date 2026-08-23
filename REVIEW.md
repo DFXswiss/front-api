@@ -16,9 +16,10 @@ This item includes the EN/DE PR-body form and GitHub-verified commits.
 ## 2. Required CI green on the head SHA
 
 Job `test` is `success` on **exactly this** SHA. That job includes the 100%
-coverage gate (`c8 --check-coverage` on all four metrics) and the offered-route
-catalog check (`test/test-offered-routes.sh`). A coverage miss or a catalog
-miss is a red job, not a review note.
+coverage gate (`c8 --check-coverage` on all four metrics), the offered-route
+catalog check (`test/test-offered-routes.sh`), and the 100ms response
+deadline. A coverage miss, catalog miss, or a helper round-trip over 100ms
+is a red job, not a review note.
 
 - `skipped` does not count as green unless this repository documents that skip
   as expected. Today: `test` is not skipped on drafts.
@@ -50,7 +51,7 @@ repository hygiene rule in CONTRIBUTING.md.
 ## 6. Tests cover the change
 
 New or changed branches in `server.js` (503 vs 200, cache hit/miss, allowlist,
-timeout, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
+timeout, 100ms deadline, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
 changes have a pin in `test/test-main-from-develop.sh`. Automatic release-PR
 body-form changes have a pin in `test/test-auto-release-pr.sh`. Green CI
 without a pin for a behaviour change is fail. Every production `*.js` file
@@ -113,3 +114,12 @@ enough to merge.
 Any fail on this item keeps the pull request as a draft or on changes
 requested. There is no "follow-up E2E" for a new or changed offered
 function unless the reviewer grants that in writing.
+
+## 12. 100ms response deadline
+
+Every HTTP response from this process must finish within 100ms. Fail if
+`MAX_RESPONSE_MS` is not 100, if `REQUEST_TIMEOUT_MS` can exceed 100, if
+the inbound budget is missing, if the upgrade handshake has no deadline,
+if a deadline miss does not emit an `ERROR` log, if the change adds a
+path that cannot finish in 100ms, or if a test round-trip is allowed to
+take longer. A slower ping is a hard bug, not a performance note.
