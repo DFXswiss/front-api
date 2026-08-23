@@ -223,7 +223,6 @@ async function refreshSwagger() {
       paths[p] = ops;
     }
     swaggerSpec = { ...got.json, paths, info: { ...(got.json.info || {}), title: 'DFX API' } };
-    console.log('swagger snapshot paths', Object.keys(paths).length);
   } catch (err) {
     console.error('swagger refresh', err.message);
   }
