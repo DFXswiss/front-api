@@ -38,7 +38,7 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 
 - `GET /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`)
 - `GET /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json` — filtered swagger snapshot from the backend; empty snapshot returns 503
-- GET cache (default 5 minutes) for `/` and the public list roots `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested concrete swagger GET paths (for example `/v1/setting/infoBanner`) are filled in the background too. Parameterized paths such as `/v1/asset/{id}` are unknown here and are forwarded. HEAD is forwarded.
+- GET cache (default 5 minutes) for `/` and the public list roots `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths (for example `/v1/setting/infoBanner` or `/v1/asset/1`) are unknown here and are forwarded. HEAD is forwarded.
 - Optional Postgres reads for `GET /v1/country` and `GET /v1/language` when `SQL_HOST` is set
 
 Only fresh cache hits are served for known GETs. The cache is filled in the

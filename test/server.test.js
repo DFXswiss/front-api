@@ -383,45 +383,18 @@ async function main() {
   setPool(null);
 
   await refreshSwagger();
-  if (!isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('cache nested swagger GET');
-  if (isCacheable({ method: 'GET', url: '/v1/asset/{id}', headers: {} })) fail('cache param template');
-  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('known infoBanner');
+  if (isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('nested swagger GET is unknown');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('infoBanner is forwarded');
   if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/user']) {
     fail('refreshSwagger allowlist');
   }
+  if (getSwaggerSpec().paths['/v1/setting/infoBanner'] || getSwaggerSpec().paths['/v1/asset/{id}']) {
+    fail('refreshSwagger must drop nested and templates');
+  }
   const refreshPaths = cacheRefreshPaths();
   if (!refreshPaths.includes('/') || !refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
-  if (!refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested swagger GET');
-  if (refreshPaths.includes('/v1/asset/{id}')) fail('cacheRefreshPaths parameterized');
-  if (refreshPaths.includes('/v1/user')) fail('cacheRefreshPaths unserved');
+  if (refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
   if (refreshPaths.includes('/version')) fail('cacheRefreshPaths local version');
-  setSwaggerSpec(null);
-  if (!cacheRefreshPaths().includes('/v1/coin')) fail('cacheRefreshPaths without snapshot');
-  setSwaggerSpec({});
-  if (!cacheRefreshPaths().includes('/')) fail('cacheRefreshPaths without paths');
-  setSwaggerSpec({ paths: { '/v1/user': { get: {} } } });
-  if (cacheRefreshPaths().includes('/v1/user')) fail('cacheRefreshPaths must skip unserved swagger path');
-  setSwaggerSpec({
-    paths: {
-      '/v1/fiat': null,
-      '/v1/setting/infoBanner': { post: {} },
-      '/v1/statistic/x': 1,
-      '/v1/coin': { get: {} },
-      '/swagger': { get: {} },
-      '/swagger/': { get: {} },
-      '/swagger-json': { get: {} },
-      '/swagger-json/': { get: {} },
-      '/swagger-ui': { get: {} },
-      '/swagger-ui/': { get: {} },
-      '/version': { get: {} },
-    },
-  });
-  const partialPaths = cacheRefreshPaths();
-  if (partialPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths must skip non-GET');
-  if (partialPaths.includes('/v1/statistic/x')) fail('cacheRefreshPaths must skip non-object ops');
-  if (partialPaths.includes('/swagger-json') || partialPaths.includes('/version')) fail('cacheRefreshPaths must skip local swagger/version');
-  if (!partialPaths.includes('/v1/coin')) fail('cacheRefreshPaths keeps prefixes');
-  await refreshSwagger();
 
   const port = await listen(server);
   try {
@@ -662,12 +635,12 @@ async function main() {
     await refreshCache();
     if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
     if (!getCached('GET /')) fail('refreshCache must fill GET /');
-    if (!getCached('GET /v1/setting/infoBanner')) fail('refreshCache must fill nested swagger GET');
-    if (getCached('GET /v1/asset/{id}')) fail('refreshCache must skip parameterized swagger paths');
+    if (getCached('GET /v1/setting/infoBanner')) fail('refreshCache must not fill nested swagger GET');
     got = await request(port, 'GET', '/');
     if (got.status !== 200 || got.body.indexOf('root') < 0) fail('GET / from background cache');
-    got = await request(port, 'GET', '/v1/setting/infoBanner');
-    if (got.status !== 200 || got.body.indexOf('banner') < 0) fail('nested swagger GET from background cache');
+    got = await request(port, 'GET', '/v1/setting/infoBanner', undefined, undefined, 0);
+    if (got.body.indexOf('not served') >= 0) fail('nested swagger GET must be forwarded');
+    if (got.status !== 200 || got.body.indexOf('banner') < 0) fail('nested swagger GET forwarded body');
     got = await request(port, 'GET', '/v1/asset?x=1');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
     got = await request(port, 'HEAD', '/v1/asset', undefined, undefined, 0);

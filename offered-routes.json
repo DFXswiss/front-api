@@ -182,13 +182,13 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Public GET cache prefix on the swagger allowlist. Served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "List root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. Nested paths are forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that hits /v1/statistic live. Required before changing this prefix."
+          "note": "No frontend E2E named that hits /v1/statistic live. Required before changing this list root."
         }
       ]
     },
@@ -199,13 +199,13 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Public GET cache prefix on the swagger allowlist. Served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "List root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. Nested paths are forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that hits /v1/coin live. Required before changing this prefix."
+          "note": "No frontend E2E named that hits /v1/coin live. Required before changing this list root."
         }
       ]
     },
@@ -215,33 +215,14 @@
       "match": "exact",
       "usedIn": [
         {
-          "repo": "DFXswiss/packages",
-          "path": "packages/react/src/hooks/settings.hook.ts",
-          "note": "GET SettingsUrl.infoBanner (setting/infoBanner). Concrete swagger GET under this prefix is filled in the background; a miss is 503 not served, never forwarded."
+          "unidentified": true,
+          "note": "List root GET /v1/setting is served from the background cache. Nested GET /v1/setting/infoBanner is forwarded, not answered here."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "Widget specs intercept GET /v1/setting/infoBanner; that is not E2E of this layer. A live frontend E2E is required before changing this path."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setting/infoBanner",
-      "match": "exact",
-      "usedIn": [
-        {
-          "repo": "DFXswiss/packages",
-          "path": "packages/react/src/hooks/settings.hook.ts",
-          "note": "GET SettingsUrl.infoBanner. Concrete swagger GET filled in the background; a miss is 503 not served."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "Widget specs intercept GET /v1/setting/infoBanner; that is not E2E of this layer. A live frontend E2E is required before changing this path."
+          "note": "No frontend E2E named that GETs the list root /v1/setting live. Nested infoBanner is forwarded."
         }
       ]
     },
@@ -259,7 +240,7 @@
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that GETs /v1/bank live through the UI. Required before changing this prefix."
+          "note": "No frontend E2E named that GETs /v1/bank live through the UI. Required before changing this list root."
         }
       ]
     },
@@ -270,13 +251,13 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Public GET cache prefix on the swagger allowlist. Served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages."
+          "note": "List root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. Nested paths are forwarded. No named call site in DFXswiss/packages."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that hits /v1/app live. Required before changing this prefix."
+          "note": "No frontend E2E named that hits /v1/app live. Required before changing this list root."
         }
       ]
     }

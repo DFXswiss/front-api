@@ -31,7 +31,7 @@ function outboundTimeoutMs(raw) {
 const REQUEST_TIMEOUT_MS = outboundTimeoutMs(orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS));
 const STARTED = new Date().toISOString();
 
-// Public GET prefixes this layer may answer from cache. Authenticated
+// Public GET list roots this layer may answer from cache. Authenticated
 // requests are never cached.
 const CACHE_PREFIXES = [
   '/v1/asset',
@@ -85,11 +85,7 @@ function isCacheable(req) {
   if (req.headers.authorization) return false;
   const path = (req.url ?? '/').split('?')[0];
   if (path === '/' || path === '/version' || path === '/swagger' || path === '/swagger-json') return true;
-  if (CACHE_PREFIXES.includes(path)) return true;
-  const spec = swaggerSpec;
-  if (!spec || !spec.paths || path.indexOf('{') >= 0) return false;
-  const ops = spec.paths[path];
-  return !!(ops && typeof ops === 'object' && ops.get);
+  return CACHE_PREFIXES.includes(path);
 }
 
 function getCached(key) {
@@ -213,11 +209,9 @@ const EXACT_GET_PATHS = [
 ];
 
 function isServedPath(path) {
-  const p = (path || '/').split('?')[0];
+  const p = (path ?? '/').split('?')[0];
   if (EXACT_GET_PATHS.includes(p)) return true;
-  if (CACHE_PREFIXES.includes(p)) return true;
-  if (p.indexOf('{') >= 0) return false;
-  return CACHE_PREFIXES.some((pref) => p.startsWith(pref + '/'));
+  return CACHE_PREFIXES.includes(p);
 }
 
 function isKnownLocalRequest(req) {
@@ -417,18 +411,7 @@ function proxy(req, res) {
 }
 
 function cacheRefreshPaths() {
-  const out = new Set(['/', ...CACHE_PREFIXES]);
-  const spec = swaggerSpec;
-  if (!spec || !spec.paths) return [...out];
-  for (const p of Object.keys(spec.paths)) {
-    if (!isServedPath(p)) continue;
-    if (p === '/version' || p === '/swagger' || p === '/swagger/' || p === '/swagger-json' || p === '/swagger-json/' || p === '/swagger-ui' || p === '/swagger-ui/') continue;
-    const ops = spec.paths[p];
-    if (!ops || typeof ops !== 'object') continue;
-    if (!ops.get) continue;
-    out.add(p);
-  }
-  return [...out];
+  return ['/', ...CACHE_PREFIXES];
 }
 
 async function refreshCache() {
