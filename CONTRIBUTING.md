@@ -19,14 +19,16 @@ this file was applied fully and correctly.
 
 The required suite is the GitHub Actions job `test`. It runs `npm ci`, then
 `bash test/test-server.sh` (behaviour pins **and** the 100% coverage gate),
-`bash test/test-main-from-develop.sh`, and `bash test/test-auto-release-pr.sh`.
-Employees are not required to run it locally; those three commands are the
-local equivalent (`npm ci` first if `c8` is missing). Draft pull requests still
-run `test`. This repository does not skip CI on drafts and has no `ci:full`
-label.
+`bash test/test-offered-routes.sh` (usage catalog vs the served-path
+allowlist), `bash test/test-main-from-develop.sh`, and
+`bash test/test-auto-release-pr.sh`. Employees are not required to run it
+locally; those four commands are the local equivalent (`npm ci` first if `c8`
+is missing). Draft pull requests still run `test`. This repository does not
+skip CI on drafts and has no `ci:full` label.
 
 ```bash
 bash test/test-server.sh
+bash test/test-offered-routes.sh
 bash test/test-main-from-develop.sh
 bash test/test-auto-release-pr.sh
 ```
@@ -104,9 +106,17 @@ When applicable, every pull request must include:
    behaviour the pull request changes.
 3. **Swagger allowlist** update when the set of paths this process answers
    itself changes (`isServedPath`, `CACHE_PREFIXES`, RAM quote paths).
-4. **A note in the PR body** when the outward behaviour of this layer changes
+4. **`offered-routes.json`** update for every path this process answers
+   itself: a `usedIn` pointer (public consumer repo + file) and an `e2e`
+   pointer (frontend-inclusive E2E in a public repo + file). CI checks the
+   catalog is complete and the fields are present. CI does **not** run
+   foreign E2E suites — reviewers do, per [REVIEW.md](REVIEW.md). The E2E
+   need not live on that other repository's default branch. Private
+   repositories are not named.
+5. **A note in the PR body** when the outward behaviour of this layer changes
    (cache, 503 bodies, `x-front-api`, which paths are answered here versus
-   proxied, quote source). Do not name other repositories.
+   proxied, quote source). Do not name private repositories. Public consumer
+   paths belong in `offered-routes.json`.
 
 Missing any applicable item = changes requested.
 
@@ -163,3 +173,12 @@ if CI is green.
 
 There is no production JavaScript in this repository that may ship below 100%
 coverage. The coverage gate is the CI job, not a review courtesy.
+
+Every path this process answers itself also needs **frontend E2E** coverage:
+a real UI flow that hits that function, listed in `offered-routes.json`.
+Those tests usually live in the consumer repository (for example
+`DFXswiss/services` `e2e-stack/specs/buy.spec.ts`). This repository's CI
+enforces the catalog, not the foreign suite. A mocked API intercept that
+never reaches this process is not E2E of this layer. Reviewers must not
+merge a change to an offered function until that E2E exists (any branch of
+the named public repo).

@@ -1,0 +1,534 @@
+{
+  "title": "Offered routes: usage and frontend E2E",
+  "rules": "Every path this process answers itself has a row. usedIn names a public consumer repo and file. e2e names a frontend-inclusive E2E in a public repo (any branch; this repo's CI does not run it). Private repositories are not named. Proxied backend routes are not listed.",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/front-api",
+          "path": "server.js",
+          "note": "Local JSON/HTML landing when Accept prefers HTML; served from this process."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack widget harness reaches this HTTP layer. Browser GET / is also the swagger landing when used as the API origin."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/version",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/compose.yml",
+          "note": "API container healthcheck is GET /version."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack smoke; compose waits on GET /version before tests run."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/swagger",
+      "match": "exact",
+      "aliases": ["/swagger/", "/swagger-ui", "/swagger-ui/"],
+      "usedIn": [
+        {
+          "repo": "DFXswiss/front-api",
+          "path": "server.js",
+          "note": "Filtered swagger UI HTML this process serves."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack frontend against this API origin; swagger HTML is this process's own frontend for the allowlist."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-json",
+      "match": "exact",
+      "aliases": ["/swagger-json/"],
+      "usedIn": [
+        {
+          "repo": "DFXswiss/front-api",
+          "path": "server.js",
+          "note": "Allowlist snapshot loaded by the swagger UI this process serves."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack frontend against this API origin."
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/buy/quote",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/core/src/client/BuyApi.ts",
+          "note": "BuyApi.quote PUTs BuyUrl.quote (buy/quote) without a session token."
+        },
+        {
+          "repo": "DFXswiss/dfx-wallet",
+          "path": "src/features/dfx-backend/services/payment-service.ts",
+          "note": "Wallet payment service PUTs /v1/buy/quote."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/screens/buy.screen.tsx",
+          "note": "Widget buy screen. Quote display goes through @dfx.swiss/react useBuy(); the RAM quote path is BuyApi.quote in DFXswiss/packages. receiveFor itself PUTs buy/paymentInfos (proxied, not this row)."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Full-stack Playwright buy flow through the widget frontend against the API origin."
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/sell/quote",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/core/src/client/SellApi.ts",
+          "note": "SellApi.quote PUTs SellUrl.quote (sell/quote)."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/screens/sell.screen.tsx",
+          "note": "Widget sell screen via @dfx.swiss/react useSell()."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/sell-swap.spec.ts",
+          "note": "Full-stack Playwright sell/swap flow through the widget frontend."
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/swap/quote",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/core/src/client/SwapApi.ts",
+          "note": "SwapApi.quote PUTs SwapUrl.quote (swap/quote)."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/screens/swap.screen.tsx",
+          "note": "Widget swap screen via @dfx.swiss/react useSwap()."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/sell-swap.spec.ts",
+          "note": "Full-stack Playwright swap flow through the widget frontend."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/asset",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/asset.hook.ts",
+          "note": "GET AssetUrl.get (asset) with blockchain query."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/screens/buy.screen.tsx",
+          "note": "Widget buy screen loads assets through @dfx.swiss/react."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Asserts offered assets against GET /v1/asset in the full-stack widget flow."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Direct GET /v1/asset in the full-stack harness."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/fiat",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/fiat.hook.ts",
+          "note": "GET FiatUrl.get (fiat)."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/screens/buy.screen.tsx",
+          "note": "Widget uses useBuy().currencies from the fiat list."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_fiat_service.dart",
+          "note": "Wallet GET /v1/fiat."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Full-stack widget buy flow checks GET /v1/fiat."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/country",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/country.hook.ts",
+          "note": "GET CountryUrl.get (country)."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_country_service.dart",
+          "note": "Wallet GET /v1/country."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Full-stack widget bootstrap GETs /v1/country with the other public lists."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/language",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/language.hook.ts",
+          "note": "GET LanguageUrl.get (language)."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_language_service.dart",
+          "note": "Wallet GET /v1/language."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Full-stack widget bootstrap GETs /v1/language."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/statistic",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/front-api",
+          "path": "server.js",
+          "note": "Public GET cache prefix on the swagger allowlist. No named call site in DFXswiss/packages or DFXswiss/services develop; replace this row's usedIn with the public consumer file when one is known."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack API origin is up. A dedicated frontend E2E for /v1/statistic is required before changing this prefix; this pointer is the stack, not a statistic-page assertion."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/coin",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/front-api",
+          "path": "server.js",
+          "note": "Public GET cache prefix on the swagger allowlist. No named call site in DFXswiss/packages or DFXswiss/services develop; replace usedIn with the public consumer file when one is known."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack API origin is up. A dedicated frontend E2E for /v1/coin is required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setting",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/settings.hook.ts",
+          "note": "GET SettingsUrl.infoBanner (setting/infoBanner)."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e/buy-process.spec.ts",
+          "note": "Widget E2E intercepts GET /v1/setting/infoBanner during frontend flows."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Full-stack widget buy flow loads settings with the rest of the public bootstrap."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/bank",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/bank.hook.ts",
+          "note": "GET BankUrl.get (bank)."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/util/personal-iban.ts",
+          "note": "Comments the public GET /v1/bank rows for Bank Frick EUR/CHF."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Full-stack widget buy flow."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/app",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/front-api",
+          "path": "server.js",
+          "note": "Public GET cache prefix on the swagger allowlist. No named call site in DFXswiss/packages develop; replace usedIn with the public consumer file when one is known."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/smoke.spec.ts",
+          "note": "Full-stack API origin is up. A dedicated frontend E2E for /v1/app is required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/buyPrice",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "Wallet buy converter uses the parallel /v1/realunit/brokerbot/buyPrice path from the same RAM book; this /quote/ path is the public quote GET."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "test/screens/buy/buy_page_test.dart",
+          "note": "Frontend buy page. A Maestro/device E2E of the buy converter is required before changing this path; widget tests are not a substitute."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/buyShares",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "Wallet uses /v1/realunit/brokerbot/buyShares; this is the public /quote/ twin in the RAM book."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "test/screens/buy/buy_page_test.dart",
+          "note": "Frontend buy page. Maestro/device E2E required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/info",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "Same RAM quote book as the wallet brokerbot GETs. Replace with the public file that calls /quote/info when one is named."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e/realunit-dashboard.spec.ts",
+          "note": "Widget RealUnit dashboard frontend. Intercepts sibling /v1/realunit/price paths today; a live GET of /quote/info is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/price",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "Same RAM quote book as the wallet brokerbot GETs. Replace with the public file that calls /quote/price when one is named."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e/realunit-dashboard.spec.ts",
+          "note": "Widget RealUnit dashboard frontend. A live GET of /quote/price is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/buyPrice",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "DfxBrokerbotService._buyPricePath."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/screens/buy/cubits/buy_converter/buy_converter_cubit.dart",
+          "note": "Buy converter calls getBuyPrice."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "test/screens/buy/buy_page_test.dart",
+          "note": "Frontend buy page. Maestro/device E2E of the buy converter is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/buyShares",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "DfxBrokerbotService._buySharesPath."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/screens/buy/cubits/buy_converter/buy_converter_cubit.dart",
+          "note": "Buy converter calls getBuyShares."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "test/screens/buy/buy_page_test.dart",
+          "note": "Frontend buy page. Maestro/device E2E required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/info",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "Wallet brokerbot client. Replace with the public file that calls /brokerbot/info when one is named."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "test/screens/buy/buy_page_test.dart",
+          "note": "Frontend buy page. A live GET of /brokerbot/info is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/price",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "Wallet brokerbot client. Replace with the public file that calls /brokerbot/price when one is named."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "test/screens/buy/buy_page_test.dart",
+          "note": "Frontend buy page. A live GET of /brokerbot/price is required before changing this path."
+        }
+      ]
+    }
+  ]
+}

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "main": "server.js",
   "scripts": {
-    "test": "bash test/test-server.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh",
+    "test": "bash test/test-server.sh && bash test/test-offered-routes.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh",
     "coverage:report": "c8 --check-coverage report"
   },
   "dependencies": {
