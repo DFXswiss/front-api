@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+# local one-command start (stub + process)          local_start
 # Pin test + 100% coverage gate for production JS (c8).
 #
 # Arms:
+#   local one-command start (stub + process)          local_start
 #   swagger snapshot empty → 503 local body          swagger_empty
 #   PUT /v1/buy/quote → 503 backend unavailable      quote_proxy
 #   mock records forwarded method/path/body          quote_forward
@@ -87,6 +89,20 @@ grep -q 'FRONT_API_EXIT_AFTER_BOOT=1' "$repo_root/test/run-main-coverage.sh" || 
 grep -q 'coverage:report' "$pkg" || fail "coverage_100: coverage:report script missing"
 grep -q -- '--check-coverage' "$pkg" || fail "coverage_100: check-coverage missing from package.json"
 
+grep -Fq '"start": "node scripts/start-local.js"' "$repo_root/package.json" || fail "local_start: package.json must define npm start"
+test -f "$repo_root/scripts/start-local.js" || fail "local_start: scripts/start-local.js missing"
+test -f "$repo_root/scripts/local-backend.js" || fail "local_start: scripts/local-backend.js missing"
+grep -Fq '"scripts/**"' "$repo_root/.c8rc.json" || fail "local_start: scripts must be excluded from production coverage"
+if grep -q 'server.js' "$repo_root/.c8rc.json"; then fail "coverage_all: production server.js must not be excluded"; fi
+if grep -q scripts "$repo_root/Dockerfile"; then fail "local_start: Dockerfile must not copy scripts/"; fi
+grep -Fq 'npm start' "$repo_root/README.md" || fail "local_start: README must document npm start"
+grep -Fq 'npm start' "$repo_root/CONTRIBUTING.md" || fail "local_start: CONTRIBUTING must document npm start"
+grep -Fq 'scripts/**' "$repo_root/CONTRIBUTING.md" || fail "local_start: CONTRIBUTING must document scripts coverage"
+if grep -Eq 'createLocalBackend|shouldStartLocalBackend|applyLocalDefaults' "$repo_root/server.js"; then
+  fail "local_start: stub helpers must not be added to production server.js"
+fi
+test -f "$repo_root/test/local-start.test.js" || fail "local_start: test/local-start.test.js missing"
+
 cd "$repo_root"
 if [ ! -d node_modules/c8 ]; then
   npm ci
@@ -97,5 +113,7 @@ npx c8 --reporter=text --reporter=text-summary node test/server.test.js || fail 
 bash "$repo_root/test/run-main-coverage.sh" || fail "require.main coverage run failed"
 
 npm run coverage:report || fail "coverage 100% gate failed"
+
+node "$repo_root/test/local-start.test.js" || fail "local_start: node test/local-start.test.js failed"
 
 echo "ok front-api server.js"

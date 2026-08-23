@@ -4,11 +4,33 @@ Public HTTP layer in front of the DFX backend. This process answers a fixed set 
 
 ## Run
 
-`BACKEND_URL` is required.
+After cloning the repository, start the front API and its loopback-only HTTP stub with one command:
 
 ```bash
-BACKEND_URL=http://127.0.0.1:3000 node server.js
+npm start
 ```
+
+The default path needs no dependency installation: the start helpers use only the Node.js standard library, and `server.js` loads `pg` only when `SQL_HOST` is set. Run `npm ci` when you want to use the test suite.
+
+By default, the front API listens on `http://127.0.0.1:3000` and the stub listens on `http://127.0.0.1:3004`. Set `BACKEND_URL` to use an upstream HTTP backend and skip the local stub:
+
+```bash
+BACKEND_URL=http://127.0.0.1:4000 npm start
+```
+
+Local start settings:
+
+- `PORT` sets the front API port and defaults to `3000`.
+- `BIND` sets the front API bind address and defaults to `127.0.0.1` for `npm start`.
+- `LOCAL_BACKEND_PORT` sets the stub port and defaults to `3004`.
+
+Direct production start does not create a stub and remains available with an explicit upstream HTTP backend:
+
+```bash
+BACKEND_URL=http://127.0.0.1:4000 node server.js
+```
+
+Direct `node server.js` continues to default `BIND` to `0.0.0.0`; the loopback bind default applies only to `npm start`.
 
 Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `CACHE_MAX`, `REQUEST_TIMEOUT_MS` (capped at 100; default 100), `SQL_HOST` / `SQL_PORT` / `SQL_DB` / `SQL_USERNAME` / `SQL_PASSWORD` / `SQL_SSL`. `FRONT_API_EXIT_AFTER_BOOT=1` is for the coverage collection run only: the process exits shortly after listen.
 

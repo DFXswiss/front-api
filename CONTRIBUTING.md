@@ -17,6 +17,16 @@ this file was applied fully and correctly.
 
 ## Build & Test
 
+Use `npm start` for a one-command local start. It starts a loopback HTTP stub and then this process; setting `BACKEND_URL` uses that upstream HTTP backend without starting the stub. This convenience command does not replace the test suite, which remains the four bash commands documented below.
+
+The 100% coverage gate applies to production JavaScript. The `scripts/` directory contains local start helpers and is not copied into the Docker image, so c8 excludes `scripts/**`. Production `server.js` must not be excluded, and production code must not be listed in `--exclude`.
+
+The complete c8 exclude list is:
+
+```text
+--exclude='test/**' --exclude='coverage/**' --exclude='node_modules/**' --exclude='scripts/**'
+```
+
 The required suite is the GitHub Actions job `test`. It runs `npm ci`, then
 `bash test/test-server.sh` (behaviour pins **and** the 100% coverage gate),
 `bash test/test-offered-routes.sh` (usage catalog vs the served-path
@@ -35,11 +45,12 @@ bash test/test-auto-release-pr.sh
 
 Every production JavaScript file must stay at **100% statement, branch,
 function and line coverage**. CI enforces this with `c8 --check-coverage`
-(see `.c8rc.json`: `--all --include='**/*.js' --exclude='test/**' --exclude='coverage/**' --exclude='node_modules/**'`,
+(see `.c8rc.json`: `--all --include='**/*.js' --exclude='test/**' --exclude='coverage/**' --exclude='node_modules/**' --exclude='scripts/**'`,
 and 100 on all four metrics). A result below 100% on any metric turns the
 `test` job red. `--all` plus that include/exclude pulls every new `*.js` file
-outside `test/` into the report at 0% until tests exist: adding a script
-without tests fails CI. Production code must not be listed in `--exclude`.
+outside `test/` and `scripts/` into the report at 0% until tests exist.
+Production code must not be listed in `--exclude`; `scripts/` remains the
+documented exception exclude.
 
 ## Git & PRs
 
