@@ -40,7 +40,7 @@ if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; the
 fi
 grep -q 'quote_forward' "$test_js" || fail "quote_forward: pin missing"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
-grep -Fq "CACHE_TTL_MS = '200'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
+grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
 
 c8rc="$repo_root/.c8rc.json"
 [ -f "$c8rc" ] || fail "coverage_100: missing .c8rc.json"
