@@ -32,9 +32,8 @@
       ],
       "e2e": [
         {
-          "repo": "DFXswiss/services",
-          "path": "e2e-stack/specs/smoke.spec.ts",
-          "note": "Full-stack harness; compose waits on GET /version before the widget tests run."
+          "unidentified": true,
+          "note": "compose.yml usedIn is a healthcheck, not a frontend UI flow. A frontend E2E that hits GET /version is required before changing this path."
         }
       ]
     },
@@ -45,9 +44,8 @@
       "aliases": ["/swagger/", "/swagger-ui", "/swagger-ui/"],
       "usedIn": [
         {
-          "repo": "DFXswiss/front-api",
-          "path": "server.js",
-          "note": "This process serves the filtered swagger UI HTML."
+          "unidentified": true,
+          "note": "This process serves the filtered swagger UI HTML. No separate public consumer call site named."
         }
       ],
       "e2e": [
@@ -64,9 +62,8 @@
       "aliases": ["/swagger-json/"],
       "usedIn": [
         {
-          "repo": "DFXswiss/front-api",
-          "path": "server.js",
-          "note": "Allowlist snapshot loaded by the swagger UI this process serves."
+          "unidentified": true,
+          "note": "Allowlist snapshot loaded by the swagger UI this process serves. No separate public consumer call site named."
         }
       ],
       "e2e": [
@@ -156,11 +153,6 @@
           "repo": "DFXswiss/services",
           "path": "e2e-stack/specs/buy.spec.ts",
           "note": "Full-stack widget buy flow asserts against GET /v1/asset."
-        },
-        {
-          "repo": "DFXswiss/services",
-          "path": "e2e-stack/specs/smoke.spec.ts",
-          "note": "Direct GET /v1/asset in the full-stack harness."
         }
       ]
     },

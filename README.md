@@ -22,4 +22,5 @@ This repository does not describe a particular deployment environment.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Reviewers follow [REVIEW.md](REVIEW.md).
 Every path this process answers itself is listed in [offered-routes.json](offered-routes.json)
-with a public usage pointer and a frontend E2E pointer.
+with a public usage pointer and a frontend E2E pointer, or `unidentified: true`
+plus a note when none is named.
