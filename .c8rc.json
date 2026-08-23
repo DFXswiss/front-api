@@ -1,7 +1,7 @@
 {
   "all": true,
   "include": ["**/*.js"],
-  "exclude": ["test/**", "coverage/**", "node_modules/**"],
+  "exclude": ["test/**", "coverage/**", "node_modules/**", "scripts/**"],
   "temp-directory": "coverage/tmp",
   "lines": 100,
   "functions": 100,
