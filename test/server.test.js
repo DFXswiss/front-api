@@ -320,7 +320,7 @@ async function main() {
         (row.path === '/v1/buy/quote' || row.path === '/v1/sell/quote' || row.path === '/v1/swap/quote')) ||
       (row.method === 'GET' && row.path === '/v1/realunit/quote/price'),
     );
-    if (forwarded.length < 4) fail('quote_forward: missing recorded requests');
+    if (forwarded.length !== 4) fail('quote_forward: expected exactly 4 recorded requests');
     const buyFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/buy/quote');
     const sellFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/sell/quote');
     const swapFwd = forwarded.find((row) => row.method === 'PUT' && row.path === '/v1/swap/quote');
