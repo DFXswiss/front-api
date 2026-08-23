@@ -571,7 +571,7 @@ async function main() {
     if (got.status !== 200 || got.headers['x-front-api'] !== 'db') fail('db country');
     setPool({ query: async () => null });
     got = await request(port, 'GET', '/v1/language');
-    if (!got.status) fail('db null');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db null');
     putCache('GET /v1/language', 200, { 'content-type': 'application/json' }, Buffer.from('{"s":1}'));
     cache.get('GET /v1/language').exp = Date.now() - 1;
     setPool({

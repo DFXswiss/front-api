@@ -164,8 +164,9 @@ Missing any applicable item = changes requested.
   exist only to serve known GETs from local state.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
-- Authenticated requests are never answered from the GET cache; they are
-  unknown to this layer and are forwarded.
+- Authenticated requests are never answered from the GET cache; those
+  cache-prefix GETs are unknown here and are forwarded. `GET /version`
+  and swagger remain local even with `Authorization`.
 - Never serve an expired cache body.
 - Every **known** HTTP response from this process must complete within
   **100ms**. That bound is technical and always enforced, not a target. The
