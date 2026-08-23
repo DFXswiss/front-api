@@ -16,14 +16,23 @@ const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
 if (!Array.isArray(catalog.routes) || catalog.routes.length === 0) fail('catalog.routes must be a non-empty array');
 
 process.env.BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:9';
-const { CACHE_PREFIXES, RAM_GET_PATHS, isServedPath } = require('../server.js');
+const { CACHE_PREFIXES, RAM_GET_PATHS, EXACT_GET_PATHS, EXACT_PUT_PATHS, isServedPath } = require('../server.js');
 
-const PRIVATE_NAME = /DFXswiss\/backend|DFXswiss\/api\b|DFXswiss\/intern|DFXServer\/|TaprootFreak|m5me|m5Air|dfxserve/i;
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-const METHODS = new Set(['GET', 'PUT', 'POST', 'HEAD', 'DELETE']);
+const PUBLIC_REPOS = new Set([
+  'DFXswiss/services',
+  'DFXswiss/packages',
+  'DFXswiss/dfx-wallet',
+  'DFXswiss/front-api',
+  'RealUnitCH/app',
+]);
+const METHODS = new Set(['GET', 'PUT']);
 
 function namesOf(row) {
   return [row.path].concat(Array.isArray(row.aliases) ? row.aliases : []);
+}
+
+function rowFor(method, urlPath, match) {
+  return catalog.routes.find((row) => row.method === method && row.path === urlPath && row.match === match);
 }
 
 function catalogCovers(method, urlPath) {
@@ -47,7 +56,7 @@ for (const row of catalog.routes) {
   seen.add(key);
 
   if (!isServedPath(row.path)) fail('catalog path is not served: ' + row.path);
-  for (const alias of row.aliases || []) {
+  for (const alias of row.aliases ?? []) {
     if (!isServedPath(alias)) fail('catalog alias is not served: ' + alias);
   }
 
@@ -56,47 +65,44 @@ for (const row of catalog.routes) {
 
   for (const ref of row.usedIn.concat(row.e2e)) {
     if (!ref || typeof ref !== 'object') fail('bad pointer on ' + key);
-    const blob = JSON.stringify(ref);
-    if (PRIVATE_NAME.test(blob)) fail('private or internal name in catalog pointer: ' + key);
     if (ref.unidentified === true) {
       if (typeof ref.note !== 'string' || !ref.note) fail('unidentified pointer needs note: ' + key);
       continue;
     }
-    if (typeof ref.repo !== 'string' || !REPO.test(ref.repo)) fail('bad repo on ' + key + ': ' + (ref && ref.repo));
+    if (typeof ref.repo !== 'string' || !PUBLIC_REPOS.has(ref.repo)) {
+      fail('repo must be a listed public consumer: ' + key + ': ' + (ref && ref.repo));
+    }
     if (typeof ref.path !== 'string' || !ref.path) fail('bad pointer path on ' + key);
   }
 }
 
-const exactGet = [
-  '/',
-  '/version',
-  '/swagger',
-  '/swagger/',
-  '/swagger-json',
-  '/swagger-json/',
-  '/swagger-ui',
-  '/swagger-ui/',
-];
-const exactPut = ['/v1/buy/quote', '/v1/sell/quote', '/v1/swap/quote'];
-
-for (const p of exactGet) {
+for (const p of EXACT_GET_PATHS) {
   if (!catalogCovers('GET', p)) fail('served GET path missing from catalog: ' + p);
 }
-for (const p of exactPut) {
-  if (!catalogCovers('PUT', p)) fail('served PUT path missing from catalog: ' + p);
+for (const p of EXACT_PUT_PATHS) {
+  const row = rowFor('PUT', p, 'exact');
+  if (!row) fail('PUT quote missing as exact row: ' + p);
 }
 for (const p of RAM_GET_PATHS) {
-  if (!catalogCovers('GET', p)) fail('RAM GET path missing from catalog: ' + p);
+  const row = rowFor('GET', p, 'exact');
+  if (!row) fail('RAM GET missing as exact row: ' + p);
 }
 for (const p of CACHE_PREFIXES) {
-  if (!catalogCovers('GET', p)) fail('CACHE_PREFIX missing from catalog: ' + p);
+  const row = rowFor('GET', p, 'prefix');
+  if (!row) fail('CACHE_PREFIX missing as prefix row: ' + p);
   if (!catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath missing from catalog: ' + p + '/x');
+}
+
+const expectedKeys = new Set();
+for (const p of CACHE_PREFIXES) expectedKeys.add('GET ' + p);
+for (const p of RAM_GET_PATHS) expectedKeys.add('GET ' + p);
+for (const p of EXACT_PUT_PATHS) expectedKeys.add('PUT ' + p);
+for (const p of ['/', '/version', '/swagger', '/swagger-json']) expectedKeys.add('GET ' + p);
+for (const key of seen) {
+  if (!expectedKeys.has(key)) fail('unexpected catalog row: ' + key);
 }
 
 if (isServedPath('/v1/user')) fail('isServedPath unexpectedly true for /v1/user');
 if (catalogCovers('GET', '/v1/user')) fail('proxied /v1/user must not be in the catalog');
-
-const catalogText = fs.readFileSync(catalogPath, 'utf8');
-if (PRIVATE_NAME.test(catalogText)) fail('private or internal name in offered-routes.json');
 
 console.log('ok offered-routes.json', catalog.routes.length, 'rows');

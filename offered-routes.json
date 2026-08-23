@@ -27,7 +27,7 @@
         {
           "repo": "DFXswiss/services",
           "path": "e2e-stack/compose.yml",
-          "note": "API container healthcheck is GET /version."
+          "note": "e2e-stack compose healthcheck is GET /version."
         }
       ],
       "e2e": [
@@ -152,7 +152,7 @@
         {
           "repo": "DFXswiss/services",
           "path": "e2e-stack/specs/buy.spec.ts",
-          "note": "Full-stack widget buy flow asserts against GET /v1/asset."
+          "note": "Widget buy flow: frontend Playwright asserts against GET /v1/asset."
         }
       ]
     },
@@ -176,7 +176,7 @@
         {
           "repo": "DFXswiss/services",
           "path": "e2e-stack/specs/buy.spec.ts",
-          "note": "Full-stack widget buy flow checks GET /v1/fiat."
+          "note": "Widget buy flow: frontend Playwright checks GET /v1/fiat."
         }
       ]
     },
@@ -200,7 +200,7 @@
         {
           "repo": "DFXswiss/services",
           "path": "e2e-stack/specs/buy.spec.ts",
-          "note": "Full-stack widget bootstrap GETs public lists including country."
+          "note": "Widget buy flow: frontend Playwright loads public lists including country."
         }
       ]
     },
@@ -224,7 +224,7 @@
         {
           "repo": "DFXswiss/services",
           "path": "e2e-stack/specs/buy.spec.ts",
-          "note": "Full-stack widget bootstrap GETs /v1/language."
+          "note": "Widget buy flow: frontend Playwright loads GET /v1/language."
         }
       ]
     },

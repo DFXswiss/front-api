@@ -165,22 +165,22 @@ const RAM_GET_PATHS = [
   '/v1/realunit/brokerbot/price',
 ];
 
+const EXACT_GET_PATHS = [
+  '/',
+  '/version',
+  '/swagger',
+  '/swagger/',
+  '/swagger-json',
+  '/swagger-json/',
+  '/swagger-ui',
+  '/swagger-ui/',
+];
+
+const EXACT_PUT_PATHS = ['/v1/buy/quote', '/v1/sell/quote', '/v1/swap/quote'];
+
 function isServedPath(path) {
   const p = (path || '/').split('?')[0];
-  if (
-    p === '/' ||
-    p === '/version' ||
-    p === '/swagger' ||
-    p === '/swagger/' ||
-    p === '/swagger-json' ||
-    p === '/swagger-json/' ||
-    p === '/swagger-ui' ||
-    p === '/swagger-ui/'
-  ) {
-    return true;
-  }
-  if (p === '/v1/buy/quote' || p === '/v1/sell/quote' || p === '/v1/swap/quote') return true;
-  if (RAM_GET_PATHS.includes(p)) return true;
+  if (EXACT_GET_PATHS.includes(p) || EXACT_PUT_PATHS.includes(p) || RAM_GET_PATHS.includes(p)) return true;
   return CACHE_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
 }
 
@@ -685,6 +685,8 @@ module.exports = {
   CACHE_MAX,
   CACHE_PREFIXES,
   RAM_GET_PATHS,
+  EXACT_GET_PATHS,
+  EXACT_PUT_PATHS,
   quoteBook,
   cache,
   pairKey,
