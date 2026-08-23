@@ -6,6 +6,7 @@
 #   PUT /v1/buy/quote → 503 backend unavailable      quote_proxy
 #   mock records forwarded method/path/body          quote_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
+#   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout → callback + destroy        proxy_timeout
 #   no in-memory quotes / stale cache                quotes_gone
 #   c8 100% lines/functions/branches/statements      coverage_100
@@ -41,6 +42,7 @@ fi
 grep -q 'quote_forward' "$test_js" || fail "quote_forward: pin missing"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
 grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
+grep -Fq 'orFallback(process.env.CACHE_TTL_MS, 300000)' "$server_js" || fail "cache_ttl_default: 5 minutes missing"
 
 c8rc="$repo_root/.c8rc.json"
 [ -f "$c8rc" ] || fail "coverage_100: missing .c8rc.json"
