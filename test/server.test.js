@@ -3,6 +3,8 @@
 const http = require('http');
 const net = require('net');
 const path = require('path');
+const { EventEmitter } = require('events');
+const { Readable } = require('stream');
 const { spawn, spawnSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..');
@@ -36,6 +38,7 @@ function close(srv) {
 
 function request(port, method, urlPath, body, headers) {
   return new Promise((resolve, reject) => {
+    const t0 = Date.now();
     const payload =
       body === undefined ? null : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
     const req = http.request(
@@ -53,10 +56,16 @@ function request(port, method, urlPath, body, headers) {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
+          const ms = Date.now() - t0;
+          if (ms > 100) {
+            reject(new Error('slow ' + method + ' ' + urlPath + ' ' + ms + 'ms'));
+            return;
+          }
           resolve({
             status: res.statusCode,
             body: Buffer.concat(chunks).toString('utf8'),
             headers: res.headers,
+            ms,
           });
         });
       },
@@ -65,6 +74,31 @@ function request(port, method, urlPath, body, headers) {
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+function mockReqRes() {
+  const req = new EventEmitter();
+  req.method = 'GET';
+  req.url = '/x';
+  req.destroy = () => {
+    req.destroyed = true;
+  };
+  const res = new EventEmitter();
+  res.headersSent = false;
+  res.writeHead = function writeHead(status, headers) {
+    this.status = status;
+    this.headers = headers;
+    this.headersSent = true;
+  };
+  res.end = function end(body) {
+    this.body = body;
+    this.emit('finish');
+  };
+  return { req, res };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fakeRes() {
@@ -81,6 +115,8 @@ function fakeRes() {
     end(body) {
       this.body = body;
     },
+    on() {},
+    emit() {},
   };
 }
 
@@ -185,6 +221,13 @@ async function main() {
     sendJson,
     sendVersion,
     attachRequestTimeout,
+    attachResponseBudget,
+    attachUpgradeBudget,
+    attachPoolGuards,
+    onPoolConnect,
+    canWrite,
+    isUpgradeHandshakeComplete,
+    MAX_RESPONSE_MS,
     setSwaggerSpec,
     getSwaggerSpec,
     setPool,
@@ -199,7 +242,19 @@ async function main() {
   } = s;
 
   if (maybeExitAfterBoot() !== false) fail('maybeExitAfterBoot off');
+  if (MAX_RESPONSE_MS !== 100) fail('MAX_RESPONSE_MS');
+  const endedRes = fakeRes();
+  endedRes.writableEnded = true;
+  if (canWrite(endedRes)) fail('canWrite ended');
+  const deadRes = fakeRes();
+  deadRes.destroyed = true;
+  if (canWrite(deadRes)) fail('canWrite destroyed');
   if (REQUEST_TIMEOUT_MS !== 50) fail('REQUEST_TIMEOUT_MS env');
+  if (REQUEST_TIMEOUT_MS > MAX_RESPONSE_MS) fail('REQUEST_TIMEOUT_MS cap');
+  if (!isUpgradeHandshakeComplete('HTTP/1.1 101 Switching Protocols\r\n\r\n')) fail('handshake 101');
+  if (isUpgradeHandshakeComplete('HTTP/1.1 101\r\n')) fail('handshake incomplete');
+  if (isUpgradeHandshakeComplete('HTTP/1.1 400 Bad Request\r\n\r\n')) fail('handshake 400');
+  if (!isUpgradeHandshakeComplete('HTTP/1.1 101\r\n\r\n')) fail('handshake 101 end');
   if (orFallback('', 'x') !== 'x' || orFallback('a', 'x') !== 'a') fail('orFallback');
   if (orFallback(undefined, 'x') !== 'x' || orFallback(null, 'x') !== 'x') fail('orFallback nullish');
   const { URL } = require('url');
@@ -304,6 +359,34 @@ async function main() {
 
   const port = await listen(server);
   try {
+    const blocked = fakeRes();
+    blocked.headersSent = true;
+    sendVersion({ headers: { accept: 'text/html' } }, blocked, localVersion(), 'local');
+    const mkReq = (urlPath) => {
+      const r = new http.IncomingMessage(new net.Socket());
+      r.method = 'GET';
+      r.url = urlPath;
+      r.headers = {};
+      return r;
+    };
+    server.emit('request', mkReq('/swagger'), blocked);
+    putCache('GET /v1/asset', 200, { 'content-type': 'application/json' }, Buffer.from('[]'));
+    server.emit('request', mkReq('/v1/asset'), blocked);
+    proxy(mkReq('/v1/statistic'), blocked);
+    const raceRes = fakeRes();
+    const piped = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    piped.method = 'GET';
+    piped.url = '/v1/asset';
+    piped.headers = { host: '127.0.0.1' };
+    piped.destroy = () => {};
+    proxy(piped, raceRes);
+    raceRes.headersSent = true;
+    await sleep(50);
+
     const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
     let got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
     if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy buy body');
@@ -422,21 +505,32 @@ async function main() {
       hanging.on('error', reject);
     });
 
-    await new Promise((resolve) => {
+    await new Promise((resolve, reject) => {
+      const t0 = Date.now();
+      let settled = false;
       const sock = net.connect(port, '127.0.0.1', () => {
         sock.write(
           'GET /socket HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-A: 1\r\nX-A: 2\r\n\r\n',
         );
       });
-      sock.on('error', () => resolve());
-      sock.on('data', () => {
+      const done = (err) => {
+        if (settled) return;
+        settled = true;
+        const ms = Date.now() - t0;
         sock.destroy();
+        if (err) {
+          reject(err);
+          return;
+        }
+        if (ms > 100) {
+          reject(new Error('slow upgrade ' + ms + 'ms'));
+          return;
+        }
         resolve();
-      });
-      setTimeout(() => {
-        sock.destroy();
-        resolve();
-      }, 300);
+      };
+      sock.on('error', () => done());
+      sock.on('data', () => done());
+      setTimeout(() => done(new Error('upgrade hang')), 100);
     });
 
     const liveUp = net.connect({ port: bPort, host: '127.0.0.1' });
@@ -449,6 +543,28 @@ async function main() {
     );
     await new Promise((r) => setTimeout(r, 50));
     liveUp.destroy();
+
+    const deadClient = new net.Socket();
+    deadClient.destroy();
+    server.emit(
+      'upgrade',
+      { method: 'GET', url: '/', httpVersion: '1.1', headers: { host: 'x' } },
+      deadClient,
+      null,
+    );
+    const raceClient = new EventEmitter();
+    raceClient.destroyed = false;
+    raceClient.destroy = function destroy() {
+      this.destroyed = true;
+    };
+    server.emit(
+      'upgrade',
+      { method: 'GET', url: '/', httpVersion: '1.1', headers: { host: 'x' } },
+      raceClient,
+      Buffer.alloc(0),
+    );
+    raceClient.destroyed = true;
+    await sleep(30);
 
     const sent = fakeRes();
     sent.headersSent = true;
@@ -473,6 +589,19 @@ async function main() {
     got = await request(port, 'GET', '/v1/asset');
     if (got.status !== 503) fail('ttl_expire: expected 503');
     if (got.body.indexOf('BTC') >= 0) fail('ttl_expire: must not replay expired cache body');
+    const deadProxy = fakeRes();
+    const deadPipe = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    deadPipe.method = 'GET';
+    deadPipe.url = '/v1/statistic';
+    deadPipe.headers = { host: '127.0.0.1' };
+    deadPipe.destroy = () => {};
+    proxy(deadPipe, deadProxy);
+    deadProxy.headersSent = true;
+    await sleep(50);
     got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
     if (got.status !== 503) fail('quote_proxy dead backend');
     if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
@@ -612,6 +741,177 @@ process.exit(0);`,
     { env: childEnv(), encoding: 'utf8', timeout: 8000 },
   );
   if (sqlPlain.status !== 0) fail('sql plain ' + (sqlPlain.stderr || sqlPlain.status));
+
+  const { req: dReq, res: dRes } = mockReqRes();
+  attachResponseBudget(dReq, dRes, 15);
+  await sleep(40);
+  if (dRes.status !== 503) fail('deadline 503');
+  if (String(dRes.body).indexOf('response deadline exceeded') < 0) fail('deadline body');
+  if (!dRes.headers || dRes.headers.connection !== 'close') fail('deadline 503 connection close');
+  if (dReq.destroyed) fail('deadline 503 must not destroy before flush');
+
+  const { req: hReq, res: hRes } = mockReqRes();
+  attachResponseBudget(hReq, hRes, 15);
+  hRes.writeHead(200, {});
+  await sleep(40);
+  if (!hReq.destroyed) fail('deadline after headers');
+
+  const { req: eReq, res: eRes } = mockReqRes();
+  eRes.headersSent = true;
+  eRes.writableEnded = true;
+  attachResponseBudget(eReq, eRes, 15);
+  await sleep(40);
+  if (!eReq.destroyed) fail('deadline must cut ended-but-unfinished drain');
+
+  const { req: zReq, res: zRes } = mockReqRes();
+  zRes.headersSent = true;
+  zRes.destroyed = true;
+  attachResponseBudget(zReq, zRes, 15);
+  await sleep(40);
+  if (zReq.destroyed) fail('deadline must not destroy already-destroyed response');
+
+  function mockSock() {
+    const sock = new EventEmitter();
+    sock.destroyed = false;
+    sock.destroy = function destroy() {
+      this.destroyed = true;
+      this.emit('close');
+    };
+    return sock;
+  }
+  const hangClient = mockSock();
+  const hangUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, hangClient, hangUp, 15);
+  await sleep(40);
+  if (!hangClient.destroyed || !hangUp.destroyed) fail('upgrade deadline');
+
+  const okClient = mockSock();
+  const okUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, okClient, okUp, 15);
+  okUp.emit('data', Buffer.from('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n'));
+  okUp.emit('data', Buffer.from('more'));
+  await sleep(40);
+  if (okClient.destroyed || okUp.destroyed) fail('upgrade handshake ok');
+  if (okUp.listenerCount('data') !== 0) fail('upgrade data listener after handshake');
+
+  const splitClient = mockSock();
+  const splitUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, splitClient, splitUp, 15);
+  splitUp.emit('data', Buffer.from('HTTP/1.1 101\r\n'));
+  splitUp.emit('data', Buffer.from('\r\n'));
+  await sleep(40);
+  if (splitClient.destroyed || splitUp.destroyed) fail('upgrade handshake split headers');
+
+  const partClient = mockSock();
+  const partUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, partClient, partUp, 15);
+  partUp.emit('data', Buffer.from('HTTP/1.1 101\r\n'));
+  await sleep(40);
+  if (!partClient.destroyed || !partUp.destroyed) fail('upgrade incomplete handshake');
+
+  const badClient = mockSock();
+  const badUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, badClient, badUp, 15);
+  badUp.emit('data', Buffer.from('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n'));
+  await sleep(40);
+  if (!badClient.destroyed || !badUp.destroyed) fail('upgrade non-101 must not lift deadline');
+
+  const closedClient = mockSock();
+  const closedUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, closedClient, closedUp, 15);
+  closedClient.emit('close');
+  await sleep(40);
+  if (!closedUp.destroyed) fail('upgrade close must drop backend');
+
+  const loggedPg = [];
+  const origPgErr = console.error;
+  console.error = function error(...args) {
+    loggedPg.push(args.join(' '));
+  };
+  const fakePool = new EventEmitter();
+  attachPoolGuards(fakePool);
+  fakePool.emit('connect', { query: () => Promise.resolve() });
+  fakePool.emit('connect', { query: () => Promise.reject(new Error('no timeout')) });
+  await onPoolConnect({ query: () => Promise.resolve('ok') });
+  await sleep(20);
+  console.error = origPgErr;
+  if (!loggedPg.some((line) => line.indexOf('pg statement_timeout') >= 0)) fail('pool statement_timeout error');
+
+  const deadClientSock = mockSock();
+  const deadUpSock = mockSock();
+  deadClientSock.destroyed = true;
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, deadClientSock, deadUpSock, 15);
+  if (!deadUpSock.destroyed) fail('upgrade must drop backend if client already dead');
+
+  const deadBothClient = mockSock();
+  const deadBothUp = mockSock();
+  deadBothClient.destroyed = true;
+  deadBothUp.destroyed = true;
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, deadBothClient, deadBothUp, 15);
+
+  const skipClient = mockSock();
+  const skipUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, skipClient, skipUp, 15);
+  skipClient.destroyed = true;
+  skipUp.destroyed = true;
+  await sleep(40);
+
+  const closedDeadClient = mockSock();
+  const closedDeadUp = mockSock();
+  closedDeadUp.destroyed = true;
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, closedDeadClient, closedDeadUp, 15);
+  closedDeadClient.emit('close');
+  await sleep(40);
+
+  const { req: fReq, res: fRes } = mockReqRes();
+  attachResponseBudget(fReq, fRes, 20);
+  sendJson(fRes, 200, { ok: 1 }, 'local');
+  if (fRes.status !== 200) fail('budget fast send');
+  await sleep(40);
+  sendJson(fRes, 500, { ok: 0 }, 'local');
+  if (fRes.status !== 200) fail('sendJson after headers');
+  if (canWrite(fRes)) fail('canWrite after send');
+
+  const logged = [];
+  const origErr = console.error;
+  console.error = function error(...args) {
+    logged.push(args.join(' '));
+  };
+  const { req: sReq, res: sRes } = mockReqRes();
+  attachResponseBudget(sReq, sRes);
+  await sleep(120);
+  console.error = origErr;
+  if (sRes.status !== 503) fail('default deadline 503');
+  if (!logged.some((line) => line.indexOf('ERROR response exceeded') >= 0)) fail('over budget ERROR log');
+
+  const cap = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `process.env.BACKEND_URL='http://127.0.0.1:9';
+delete process.env.REQUEST_TIMEOUT_MS;
+const s=require(${JSON.stringify(serverJs)});
+if(s.MAX_RESPONSE_MS!==100) process.exit(2);
+if(s.REQUEST_TIMEOUT_MS!==100) process.exit(3);
+process.exit(0);`,
+    ],
+    { env: childEnv({ REQUEST_TIMEOUT_MS: '' }), encoding: 'utf8', timeout: 3000 },
+  );
+  if (cap.status !== 0) fail('MAX_RESPONSE_MS cap default: ' + cap.status);
+
+  const capHigh = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `process.env.BACKEND_URL='http://127.0.0.1:9';
+process.env.REQUEST_TIMEOUT_MS='20000';
+const s=require(${JSON.stringify(serverJs)});
+if(s.REQUEST_TIMEOUT_MS!==100) process.exit(2);
+process.exit(0);`,
+    ],
+    { env: childEnv({ REQUEST_TIMEOUT_MS: '20000' }), encoding: 'utf8', timeout: 3000 },
+  );
+  if (capHigh.status !== 0) fail('REQUEST_TIMEOUT_MS must not exceed 100: ' + capHigh.status);
 
   const pgThrow = spawnSync(
     process.execPath,

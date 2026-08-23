@@ -22,7 +22,8 @@ const BIND = orFallback(process.env.BIND, '0.0.0.0');
 const BACKEND = process.env.BACKEND_URL;
 const TTL_MS = +(orFallback(process.env.CACHE_TTL_MS, 300000));
 const CACHE_MAX = +(orFallback(process.env.CACHE_MAX, 500));
-const REQUEST_TIMEOUT_MS = +(orFallback(process.env.REQUEST_TIMEOUT_MS, 20000));
+const MAX_RESPONSE_MS = 100;
+const REQUEST_TIMEOUT_MS = Math.min(MAX_RESPONSE_MS, +(orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)));
 const STARTED = new Date().toISOString();
 
 // Public GET prefixes this layer may answer from cache. Authenticated
@@ -62,6 +63,7 @@ try {
       idleTimeoutMillis: 30000,
     });
     pool.on('error', (err) => console.error('pg pool', err.message));
+    attachPoolGuards(pool);
   }
 } catch (err) {
   console.error('pg init failed:', err.message);
@@ -98,6 +100,97 @@ function localVersion() {
 
 function attachRequestTimeout(req, ms, onTimeout) {
   req.setTimeout(ms, onTimeout);
+}
+
+function canWrite(res) {
+  return !res.headersSent && !res.writableEnded && !res.destroyed;
+}
+
+function logDeadlineError(req) {
+  console.error('ERROR response exceeded ' + MAX_RESPONSE_MS + 'ms', req.method, req.url);
+}
+
+function isUpgradeHandshakeComplete(headerBlock) {
+  if (headerBlock.indexOf('\r\n\r\n') < 0) return false;
+  const statusLine = headerBlock.slice(0, headerBlock.indexOf('\r\n'));
+  return statusLine.split(' ')[1] === '101';
+}
+
+function attachResponseBudget(req, res, budgetMs) {
+  const asked = budgetMs === undefined ? MAX_RESPONSE_MS : budgetMs;
+  const limit = Math.min(MAX_RESPONSE_MS, asked);
+  const fireAt = Math.max(1, limit - 10);
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+  };
+  const timer = setTimeout(() => {
+    if (settled) return;
+    logDeadlineError(req);
+    if (!res.headersSent) {
+      sendJson(res, 503, { statusCode: 503, message: 'response deadline exceeded', retryAfter: 1 }, 'local', {
+        connection: 'close',
+        'retry-after': '1',
+      });
+      finish();
+      return;
+    }
+    if (!res.destroyed) req.destroy();
+    finish();
+  }, fireAt);
+  timer.unref();
+  res.on('finish', finish);
+  res.on('close', finish);
+  return true;
+}
+
+function attachUpgradeBudget(req, socket, up, budgetMs) {
+  if (socket.destroyed) {
+    if (!up.destroyed) up.destroy();
+    return true;
+  }
+  const asked = budgetMs === undefined ? MAX_RESPONSE_MS : budgetMs;
+  const limit = Math.min(MAX_RESPONSE_MS, asked);
+  const fireAt = Math.max(1, limit - 10);
+  let settled = false;
+  let header = '';
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    up.removeListener('data', onData);
+    header = '';
+  };
+  const onData = (chunk) => {
+    header += chunk.toString('latin1');
+    if (isUpgradeHandshakeComplete(header)) finish();
+  };
+  const timer = setTimeout(() => {
+    if (settled) return;
+    logDeadlineError(req);
+    if (!up.destroyed) up.destroy();
+    if (!socket.destroyed) socket.destroy();
+    finish();
+  }, fireAt);
+  timer.unref();
+  up.on('data', onData);
+  socket.once('close', () => {
+    if (!up.destroyed) up.destroy();
+    finish();
+  });
+  up.once('close', finish);
+  return true;
+}
+
+function onPoolConnect(client) {
+  return client.query('SET statement_timeout TO 90');
+}
+
+function attachPoolGuards(p) {
+  p.on('connect', (client) => {
+    Promise.resolve(onPoolConnect(client)).catch((err) => console.error('pg statement_timeout', err.message));
+  });
+  return p;
 }
 
 function getBackendJson(urlPath) {
@@ -179,7 +272,8 @@ window.ui = SwaggerUIBundle({ url: '/swagger-json', dom_id: '#swagger-ui' });
 `;
 }
 
-function sendJson(res, status, body, via) {
+function sendJson(res, status, body, via, extraHeaders) {
+  if (!canWrite(res)) return;
   let buf;
   if (Buffer.isBuffer(body)) {
     try {
@@ -190,13 +284,13 @@ function sendJson(res, status, body, via) {
   } else {
     buf = Buffer.from(JSON.stringify(body, null, 2) + '\n');
   }
-  res.writeHead(status, {
+  res.writeHead(status, Object.assign({
     'content-type': 'application/json; charset=utf-8',
     'content-length': buf.length,
     'x-content-type-options': 'nosniff',
     'x-front-api': via,
     'access-control-allow-origin': '*',
-  });
+  }, extraHeaders || {}));
   res.end(buf);
 }
 
@@ -210,6 +304,7 @@ function highlightJson(obj) {
 }
 
 function sendVersion(req, res, obj, via) {
+  if (!canWrite(res)) return;
   if (String(req.headers.accept || '').includes('text/html')) {
     const html = Buffer.from(
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><title></title>' +
@@ -283,6 +378,7 @@ async function tryDbRead(path) {
 }
 
 function proxy(req, res) {
+  if (!canWrite(res)) return;
   const target = new URL(BACKEND);
   const opts = {
     hostname: target.hostname,
@@ -295,6 +391,7 @@ function proxy(req, res) {
     const chunks = [];
     up.on('data', (c) => chunks.push(c));
     up.on('end', () => {
+      if (!canWrite(res)) return;
       const body = Buffer.concat(chunks);
       const headers = { ...up.headers };
       delete headers['transfer-encoding'];
@@ -308,22 +405,23 @@ function proxy(req, res) {
   });
   p.on('error', (err) => {
     console.error('proxy error', err.message);
-    if (!res.headersSent) {
-      res.writeHead(503, {
-        'content-type': 'application/json',
-        'retry-after': '30',
-        'access-control-allow-origin': '*',
-      });
-      res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
-    }
+    if (!canWrite(res)) return;
+    res.writeHead(503, {
+      'content-type': 'application/json',
+      'retry-after': '30',
+      'access-control-allow-origin': '*',
+    });
+    res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
   });
   attachRequestTimeout(p, REQUEST_TIMEOUT_MS, () => {
     p.destroy();
   });
+  res.on('finish', () => p.destroy());
   req.pipe(p);
 }
 
 const server = http.createServer((req, res) => {
+  attachResponseBudget(req, res);
   const path = (req.url || '/').split('?')[0];
   if (path === '/version' && req.method === 'GET') {
     sendVersion(req, res, localVersion(), 'local');
@@ -336,6 +434,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     const html = Buffer.from(swaggerHtml());
+    if (!canWrite(res)) return;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': html.length, 'x-front-api': 'local' });
     res.end(html);
     return;
@@ -353,6 +452,7 @@ const server = http.createServer((req, res) => {
   const key = cacheKey(req);
   const hit = isCacheable(req) ? getCached(key) : null;
   if (hit && Date.now() <= hit.exp) {
+    if (!canWrite(res)) return;
     const headers = { ...hit.headers, 'x-front-api': 'hit' };
     res.writeHead(hit.status, headers);
     res.end(hit.body);
@@ -383,6 +483,10 @@ server.on('upgrade', (req, socket, head) => {
   const target = new URL(BACKEND);
   const port = backendPortFor(target);
   const up = net.connect(port, target.hostname, () => {
+    if (socket.destroyed) {
+      up.destroy();
+      return;
+    }
     const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
     const headers = { ...req.headers, host: target.host };
     for (const [k, v] of Object.entries(headers)) {
@@ -398,6 +502,7 @@ server.on('upgrade', (req, socket, head) => {
     up.pipe(socket);
     socket.pipe(up);
   });
+  attachUpgradeBudget(req, socket, up);
   up.on('error', () => socket.destroy());
   socket.on('error', () => up.destroy());
 });
@@ -463,6 +568,14 @@ module.exports = {
   sendVersion,
   proxy,
   attachRequestTimeout,
+  attachResponseBudget,
+  attachUpgradeBudget,
+  attachPoolGuards,
+  onPoolConnect,
+  canWrite,
+  logDeadlineError,
+  isUpgradeHandshakeComplete,
+  MAX_RESPONSE_MS,
   setSwaggerSpec,
   getSwaggerSpec,
   setPool,
