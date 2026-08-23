@@ -20,7 +20,7 @@ if (!process.env.BACKEND_URL) {
 const PORT = +(orFallback(process.env.PORT, 3000));
 const BIND = orFallback(process.env.BIND, '0.0.0.0');
 const BACKEND = process.env.BACKEND_URL;
-const TTL_MS = +(orFallback(process.env.CACHE_TTL_MS, 15000));
+const TTL_MS = +(orFallback(process.env.CACHE_TTL_MS, 300000));
 const CACHE_MAX = +(orFallback(process.env.CACHE_MAX, 500));
 const REQUEST_TIMEOUT_MS = +(orFallback(process.env.REQUEST_TIMEOUT_MS, 20000));
 const STARTED = new Date().toISOString();
