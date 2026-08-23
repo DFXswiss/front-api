@@ -88,7 +88,6 @@ function swaggerDocument() {
   };
 
   for (const prefix of PREFIXES) paths[prefix] = { get: {} };
-  paths['/v1/buy/quote'] = { put: {} };
 
   return {
     openapi: '3.0.0',
@@ -135,15 +134,6 @@ function createLocalBackend() {
         sendJson(res, fixture, method);
         return;
       }
-    }
-
-    if (method === 'PUT' && path === '/v1/buy/quote') {
-      respondAfterDrain(req, res, {
-        price: 1,
-        from: { amount: 1 },
-        to: { amount: 1 },
-      });
-      return;
     }
 
     const body = {

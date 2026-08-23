@@ -87,7 +87,7 @@
         {
           "repo": "DFXswiss/packages",
           "path": "packages/react/src/hooks/asset.hook.ts",
-          "note": "GET AssetUrl.get (asset). The list root is served from the background GET cache; a miss is 503 not served. Parameterized subpaths such as /v1/asset/1 are forwarded."
+          "note": "GET AssetUrl.get (asset). The exact list root is served from the background GET cache; a miss is 503 not served."
         },
         {
           "repo": "DFXswiss/services",
@@ -182,7 +182,7 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "List root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. Nested paths are forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "Exact list root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
@@ -199,7 +199,7 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "List root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. Nested paths are forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "Exact list root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
@@ -216,13 +216,13 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "List root GET /v1/setting is served from the background cache. Nested GET /v1/setting/infoBanner is forwarded, not answered here."
+          "note": "Exact list root GET /v1/setting is served from the background cache."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that GETs the list root /v1/setting live. Nested infoBanner is forwarded."
+          "note": "No frontend E2E named that GETs the list root /v1/setting live."
         }
       ]
     },
@@ -251,7 +251,7 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "List root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. Nested paths are forwarded. No named call site in DFXswiss/packages."
+          "note": "Exact list root on the swagger allowlist. Served from the background GET cache; a miss is 503 not served. No named call site in DFXswiss/packages."
         }
       ],
       "e2e": [

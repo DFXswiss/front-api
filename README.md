@@ -38,7 +38,7 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 
 - `GET /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`)
 - `GET /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json` — filtered swagger snapshot from the backend; empty snapshot returns 503
-- GET cache (default 5 minutes) for `/` and the public list roots `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths (for example `/v1/setting/infoBanner` or `/v1/asset/1`) are unknown here and are forwarded. HEAD is forwarded.
+- GET cache (default 5 minutes) for `/` and the public list roots `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`)
 - Optional Postgres reads for `GET /v1/country` and `GET /v1/language` when `SQL_HOST` is set
 
 Only fresh cache hits are served for known GETs. The cache is filled in the
@@ -46,9 +46,8 @@ background, not during a client request. After the TTL the next known GET
 is `503` `not served` until a background refresh succeeds — never an
 expired cache body, never a live backend wait on that request.
 
-Everything this process does not know (quotes, authenticated calls, other
-methods and paths, WebSocket upgrades) is forwarded to `BACKEND_URL` with
-no 100ms rule.
+Everything this process does not know is forwarded to `BACKEND_URL` with
+no 100ms rule. This repository does not name those routes.
 
 Every **known** HTTP response must finish within 100ms. Forwarding a known
 route is forbidden because that cannot guarantee 100ms. A slower known
