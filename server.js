@@ -85,7 +85,11 @@ function isCacheable(req) {
   if (req.headers.authorization) return false;
   const path = (req.url ?? '/').split('?')[0];
   if (path === '/' || path === '/version' || path === '/swagger' || path === '/swagger-json') return true;
-  return CACHE_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
+  if (CACHE_PREFIXES.includes(path)) return true;
+  const spec = swaggerSpec;
+  if (!spec || !spec.paths || path.indexOf('{') >= 0) return false;
+  const ops = spec.paths[path];
+  return !!(ops && typeof ops === 'object' && ops.get);
 }
 
 function getCached(key) {

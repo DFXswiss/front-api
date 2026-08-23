@@ -94,6 +94,7 @@ grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "known_local: backgroun
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: refresh set must include concrete swagger GET paths"
 grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "known_local: parameterized swagger paths must not be fetched"
 grep -Fq "req.method !== 'GET'" "$server_js" || fail "known_local: GET cache must not treat HEAD as cacheable"
+grep -Fq 'CACHE_PREFIXES.includes(path)' "$server_js" || fail "known_local: list roots are exact; parameterized paths are forwarded"
 grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
 grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
 grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"

@@ -297,9 +297,11 @@ async function main() {
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/user', headers: {} })) fail('unknown user');
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('unknown auth GET');
   if (isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('unknown HEAD');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('unknown asset id');
   if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
+  if (isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
   if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD');
   if (!isCacheable({ method: 'GET', url: '/version', headers: {} })) fail('cache version');
   if (!isCacheable({ method: 'GET', url: '/swagger', headers: {} })) fail('cache swagger');
@@ -380,6 +382,9 @@ async function main() {
   setPool(null);
 
   await refreshSwagger();
+  if (!isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('cache nested swagger GET');
+  if (isCacheable({ method: 'GET', url: '/v1/asset/{id}', headers: {} })) fail('cache param template');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('known infoBanner');
   if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/user']) {
     fail('refreshSwagger allowlist');
   }
@@ -512,6 +517,8 @@ async function main() {
     if (got.status !== 200 || got.body.indexOf('price') < 0) fail('quote_proxy realunit');
     got = await request(port, 'GET', '/v1/user', undefined, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('user') < 0) fail('unknown GET must be forwarded');
+    got = await request(port, 'GET', '/v1/asset/1', undefined, undefined, 0);
+    if (got.body.indexOf('not served') >= 0) fail('parameterized GET must be forwarded');
 
     const forwarded = seen.filter((row) =>
       (row.method === 'PUT' &&
