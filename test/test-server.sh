@@ -45,6 +45,7 @@ if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; the
   fail "server.js must not serve stale cache"
 fi
 grep -q 'quote_forward' "$test_js" || fail "quote_forward: pin missing"
+grep -Fq 'maxMs === undefined ? 100 : maxMs' "$test_js" || fail "known_local: helper 100ms cap is known routes only"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
 grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
 grep -Fq 'orFallback(process.env.CACHE_TTL_MS, 300000)' "$server_js" || fail "cache_ttl_default: 5 minutes missing"

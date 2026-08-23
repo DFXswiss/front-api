@@ -36,9 +36,10 @@ function close(srv) {
   });
 }
 
-function request(port, method, urlPath, body, headers) {
+function request(port, method, urlPath, body, headers, maxMs) {
   return new Promise((resolve, reject) => {
     const t0 = Date.now();
+    const limit = maxMs === undefined ? 100 : maxMs;
     const payload =
       body === undefined ? null : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
     const req = http.request(
@@ -57,7 +58,7 @@ function request(port, method, urlPath, body, headers) {
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const ms = Date.now() - t0;
-          if (ms > 100) {
+          if (limit > 0 && ms > limit) {
             reject(new Error('slow ' + method + ' ' + urlPath + ' ' + ms + 'ms'));
             return;
           }
@@ -500,16 +501,16 @@ async function main() {
     await sleep(50);
 
     const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
-    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
+    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy buy body');
-    got = await request(port, 'PUT', '/v1/sell/quote', buyBody);
+    got = await request(port, 'PUT', '/v1/sell/quote', buyBody, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy sell body');
     const swapBody = { sourceAsset: { id: 1 }, targetAsset: { id: 2 }, amount: 0.01 };
-    got = await request(port, 'PUT', '/v1/swap/quote', swapBody);
+    got = await request(port, 'PUT', '/v1/swap/quote', swapBody, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('rate') < 0) fail('quote_proxy swap body');
-    got = await request(port, 'GET', '/v1/realunit/quote/price');
+    got = await request(port, 'GET', '/v1/realunit/quote/price', undefined, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('price') < 0) fail('quote_proxy realunit');
-    got = await request(port, 'GET', '/v1/user');
+    got = await request(port, 'GET', '/v1/user', undefined, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('user') < 0) fail('unknown GET must be forwarded');
 
     const forwarded = seen.filter((row) =>
@@ -586,7 +587,7 @@ async function main() {
     got = await request(port, 'GET', '/v1/language');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db catch must not proxy');
     setPool(null);
-    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
+    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' }, 0);
     if (got.body.indexOf('not served') >= 0) fail('auth GET must be forwarded');
 
     await new Promise((resolve, reject) => {
@@ -661,7 +662,7 @@ async function main() {
     if (got.status !== 200 || got.body.indexOf('banner') < 0) fail('nested swagger GET from background cache');
     got = await request(port, 'GET', '/v1/asset?x=1');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
-    got = await request(port, 'HEAD', '/v1/asset');
+    got = await request(port, 'HEAD', '/v1/asset', undefined, undefined, 0);
     if (got.headers['x-front-api'] === 'hit') fail('HEAD must not be a GET cache hit');
     if (got.body.indexOf('not served') >= 0) fail('HEAD must be forwarded');
     got = await request(port, 'GET', '/v1/asset');
@@ -679,7 +680,7 @@ async function main() {
     const blockedProxy = fakeRes();
     blockedProxy.headersSent = true;
     proxy({ method: 'GET', url: '/v1/user', headers: {}, pipe() {} }, blockedProxy);
-    got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
+    got = await request(port, 'PUT', '/v1/buy/quote', buyBody, undefined, 0);
     if (got.status !== 503) fail('quote_proxy dead backend');
     if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
     if (got.body.includes('quote unavailable')) fail('quote_proxy must not say quote unavailable');
