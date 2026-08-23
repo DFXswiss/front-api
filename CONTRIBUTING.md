@@ -17,18 +17,28 @@ this file was applied fully and correctly.
 
 ## Build & Test
 
-The required suite is the GitHub Actions job `test`. It runs
-`bash test/test-server.sh`, `bash test/test-main-from-develop.sh`, and
-`bash test/test-auto-release-pr.sh`. Employees are not required to run it
-locally; those three commands are the local equivalent.
-Draft pull requests still run `test`. This repository does not skip CI on
-drafts and has no `ci:full` label.
+The required suite is the GitHub Actions job `test`. It runs `npm ci`, then
+`bash test/test-server.sh` (behaviour pins **and** the 100% coverage gate),
+`bash test/test-main-from-develop.sh`, and `bash test/test-auto-release-pr.sh`.
+Employees are not required to run it locally; those three commands are the
+local equivalent (`npm ci` first if `c8` is missing). Draft pull requests still
+run `test`. This repository does not skip CI on drafts and has no `ci:full`
+label.
 
 ```bash
 bash test/test-server.sh
 bash test/test-main-from-develop.sh
 bash test/test-auto-release-pr.sh
 ```
+
+Every production JavaScript file must stay at **100% statement, branch,
+function and line coverage**. CI enforces this with `c8 --check-coverage`
+(`--lines=100 --functions=100 --branches=100 --statements=100 --all
+--include='**/*.js' --exclude='test/**' --exclude='coverage/**'
+--exclude='node_modules/**'`). A result below 100% on any metric turns the
+`test` job red. `--all` plus that include/exclude pulls every new `*.js` file
+outside `test/` into the report at 0% until tests exist: adding a script
+without tests fails CI. Production code must not be listed in `--exclude`.
 
 ## Git & PRs
 
@@ -85,8 +95,9 @@ details body. The `DE:` block is the German summary only.
 When applicable, every pull request must include:
 
 1. **Environment / image / workflow updates** when boot or the image is
-   affected (`BACKEND_URL`, `SQL_*`, `QUOTE_BOOK_REFRESH`, `CACHE_*`, `PORT`,
-   `BIND`, Dockerfile, `.github/workflows`).
+   affected (`BACKEND_URL`, `SQL_*`, `QUOTE_BOOK_REFRESH`, `CACHE_*`,
+   `REQUEST_TIMEOUT_MS`, `FRONT_API_EXIT_AFTER_BOOT`, `PORT`, `BIND`,
+   Dockerfile, `.github/workflows`).
 2. **A pin** in `test/test-server.sh` (`server.js` behaviour),
    `test/test-main-from-develop.sh` (the main-source gate), and/or
    `test/test-auto-release-pr.sh` (the automatic release-PR body) for every
@@ -149,3 +160,6 @@ Pin tests live under `test/`. A failure mode is tested at the lowest layer that
 can express it (here: the Node helper and/or grep pins, not a production HTTP
 round-trip). A behaviour change without a new or updated pin is incomplete even
 if CI is green.
+
+There is no production JavaScript in this repository that may ship below 100%
+coverage. The coverage gate is the CI job, not a review courtesy.

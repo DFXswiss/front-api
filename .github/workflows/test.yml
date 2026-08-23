@@ -16,6 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: npm ci
       - run: bash test/test-server.sh
       - run: bash test/test-main-from-develop.sh
       - run: bash test/test-auto-release-pr.sh
