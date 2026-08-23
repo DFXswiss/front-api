@@ -474,6 +474,29 @@ async function main() {
     proxy(racedReq, raced);
     raced.headersSent = true;
     raced.writableEnded = true;
+    const closeRes = new EventEmitter();
+    closeRes.headersSent = false;
+    closeRes.writableEnded = false;
+    closeRes.destroyed = false;
+    closeRes.writeHead = function writeHead() {
+      this.headersSent = true;
+    };
+    closeRes.end = function end() {
+      this.writableEnded = true;
+    };
+    const closeReq = new Readable({
+      read() {
+        this.push(null);
+      },
+    });
+    closeReq.method = 'GET';
+    closeReq.url = '/v1/user';
+    closeReq.headers = { host: '127.0.0.1' };
+    proxy(closeReq, closeRes);
+    closeRes.emit('finish');
+    await sleep(20);
+    closeRes.emit('close');
+    closeReq.emit('aborted');
     await sleep(50);
 
     const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
@@ -600,11 +623,21 @@ async function main() {
     );
     await sleep(50);
     upClient.emit('error', new Error('upgrade client'));
+    upClient.emit('close');
     upClient.destroy();
     const deadUp = new net.Socket();
     deadUp.destroy();
     server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, deadUp, Buffer.alloc(0));
-    await sleep(50);
+    const alreadyDead = new net.Socket();
+    alreadyDead.destroyed = true;
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, alreadyDead, Buffer.alloc(0));
+    const upFirst = new net.Socket();
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, upFirst, Buffer.alloc(0));
+    await sleep(40);
+    const raceSock = new net.Socket();
+    server.emit('upgrade', { method: 'GET', url: '/socket', httpVersion: '1.1', headers: {} }, raceSock, Buffer.alloc(0));
+    raceSock.destroy();
+    await sleep(80);
 
     const sent = fakeRes();
     sent.headersSent = true;

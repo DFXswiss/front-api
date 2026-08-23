@@ -405,6 +405,8 @@ function proxy(req, res) {
     res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
   });
   res.on('finish', () => p.destroy());
+  res.on('close', () => p.destroy());
+  req.on('aborted', () => p.destroy());
   req.pipe(p);
 }
 
@@ -524,6 +526,8 @@ server.on('upgrade', (req, socket, head) => {
   });
   up.on('error', () => socket.destroy());
   socket.on('error', () => up.destroy());
+  socket.once('close', () => up.destroy());
+  up.once('close', () => socket.destroy());
 });
 
 function boot() {

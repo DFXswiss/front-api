@@ -11,7 +11,9 @@
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout → callback + destroy        proxy_timeout
 #   no in-memory quotes / stale cache                quotes_gone
-#   every HTTP response ≤ 100ms                      max_response_100
+#   known GET ≤ 100ms; unknown is forwarded          max_response_100
+#   known miss is 503 not served                     known_local
+#   quotes/upgrades forwarded                        unknown_forward
 #   c8 100% lines/functions/branches/statements      coverage_100
 #   c8 --all includes every new production .js file  coverage_all
 set -euo pipefail
