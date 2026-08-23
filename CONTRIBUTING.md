@@ -33,9 +33,9 @@ bash test/test-auto-release-pr.sh
 
 Every production JavaScript file must stay at **100% statement, branch,
 function and line coverage**. CI enforces this with `c8 --check-coverage`
-(`--lines=100 --functions=100 --branches=100 --statements=100 --all
---include='**/*.js' --exclude='test/**' --exclude='coverage/**'
---exclude='node_modules/**'`). A result below 100% on any metric turns the
+(see `.c8rc.json`: `--all --include='**/*.js' --exclude='test/**'
+`--exclude='coverage/**' --exclude='node_modules/**'`, and 100 on all four
+metrics). A result below 100% on any metric turns the
 `test` job red. `--all` plus that include/exclude pulls every new `*.js` file
 outside `test/` into the report at 0% until tests exist: adding a script
 without tests fails CI. Production code must not be listed in `--exclude`.

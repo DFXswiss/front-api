@@ -796,7 +796,7 @@ process.exit(0);`,
 
   const listenOff = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverJs], {
-      env: childEnv({ BACKEND_URL: 'http://127.0.0.1:9', PORT: '0', BIND: '127.0.0.1' }),
+      env: childEnv({ BACKEND_URL: 'http://127.0.0.1:9', PORT: '0', BIND: '127.0.0.1', QUOTE_BOOK_REFRESH: '' }),
     });
     let out = '';
     const done = () => {
@@ -816,7 +816,7 @@ process.exit(0);`,
       resolve(out);
     }, 4000);
   });
-  if (listenOff.indexOf('listening') < 0) fail('listen off: ' + listenOff);
+  if (listenOff.indexOf('quote book refresh disabled') < 0) fail('listen off: ' + listenOff);
 
   const listenOn = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverJs], {

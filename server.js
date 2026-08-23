@@ -5,7 +5,8 @@ const net = require('net');
 const { URL } = require('url');
 
 function orFallback(value, fallback) {
-  return value || fallback;
+  if (value === undefined || value === null || value === '') return fallback;
+  return value;
 }
 
 function backendPortFor(target) {
@@ -648,16 +649,17 @@ function boot() {
 }
 
 function maybeExitAfterBoot() {
-  if (process.env.FRONT_API_EXIT_AFTER_BOOT === '1') {
-    setTimeout(() => process.exit(0), 400);
-    return true;
-  }
-  return false;
+  if (process.env.FRONT_API_EXIT_AFTER_BOOT !== '1') return false;
+  server.once('listening', () => {
+    setTimeout(() => process.exit(0), 200);
+  });
+  server.once('error', () => process.exit(1));
+  return true;
 }
 
 if (require.main === module) {
-  boot();
   maybeExitAfterBoot();
+  boot();
 }
 
 function setSwaggerSpec(value) {
