@@ -91,6 +91,7 @@ grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "no_proxy: background r
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "no_proxy: refresh set must include concrete swagger GET paths"
 grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "no_proxy: parameterized swagger paths must not be fetched"
 grep -Fq "req.method !== 'GET'" "$server_js" || fail "no_proxy: GET cache must not treat HEAD as cacheable"
+grep -Fq "(req.url ?? '/')" "$server_js" || fail "no_proxy: request path fallback must use ??"
 grep -Fq "forbidden** to forward" "$repo_root/CONTRIBUTING.md" || fail "no_proxy: CONTRIBUTING must forbid forwarding a client request"
 grep -q 'socket.destroy()' "$server_js" || fail "no_proxy: upgrades must not be tunnelled"
 grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms"

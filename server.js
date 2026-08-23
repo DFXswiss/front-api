@@ -76,13 +76,13 @@ try {
 }
 
 function cacheKey(req) {
-  return req.method + ' ' + (req.url || '/').split('?')[0];
+  return req.method + ' ' + (req.url ?? '/').split('?')[0];
 }
 
 function isCacheable(req) {
   if (req.method !== 'GET') return false;
   if (req.headers.authorization) return false;
-  const path = (req.url || '/').split('?')[0];
+  const path = (req.url ?? '/').split('?')[0];
   if (path === '/' || path === '/version' || path === '/swagger' || path === '/swagger-json') return true;
   return CACHE_PREFIXES.some((p) => path === p || path.startsWith(p + '/'));
 }
@@ -384,7 +384,7 @@ async function refreshCache() {
 
 const server = http.createServer((req, res) => {
   attachResponseBudget(req, res);
-  const path = (req.url || '/').split('?')[0];
+  const path = (req.url ?? '/').split('?')[0];
   if (path === '/version' && req.method === 'GET') {
     sendVersion(req, res, localVersion(), 'local');
     return;
