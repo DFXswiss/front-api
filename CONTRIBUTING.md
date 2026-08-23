@@ -35,9 +35,8 @@ bash test/test-auto-release-pr.sh
 
 Every production JavaScript file must stay at **100% statement, branch,
 function and line coverage**. CI enforces this with `c8 --check-coverage`
-(see `.c8rc.json`: `--all --include='**/*.js' --exclude='test/**'
-`--exclude='coverage/**' --exclude='node_modules/**'`, and 100 on all four
-metrics). A result below 100% on any metric turns the
+(see `.c8rc.json`: `--all --include='**/*.js' --exclude='test/**' --exclude='coverage/**' --exclude='node_modules/**'`,
+and 100 on all four metrics). A result below 100% on any metric turns the
 `test` job red. `--all` plus that include/exclude pulls every new `*.js` file
 outside `test/` into the report at 0% until tests exist: adding a script
 without tests fails CI. Production code must not be listed in `--exclude`.
@@ -107,12 +106,14 @@ When applicable, every pull request must include:
 3. **Swagger allowlist** update when the set of paths this process answers
    itself changes (`isServedPath`, `CACHE_PREFIXES`, RAM quote paths).
 4. **`offered-routes.json`** update for every path this process answers
-   itself: a `usedIn` pointer (public consumer repo + file) and an `e2e`
-   pointer (frontend-inclusive E2E in a public repo + file). CI checks the
-   catalog is complete and the fields are present. CI does **not** run
-   foreign E2E suites — reviewers do, per [REVIEW.md](REVIEW.md). The E2E
-   need not live on that other repository's default branch. Private
-   repositories are not named.
+   itself: a `usedIn` pointer (public consumer repo + file, or
+   `unidentified: true` with a note) and an `e2e` pointer
+   (frontend-inclusive E2E in a public repo + file, or `unidentified: true`
+   with a note). CI checks the catalog is complete and the fields are
+   present. CI does **not** run foreign E2E suites — reviewers do, per
+   [REVIEW.md](REVIEW.md). The E2E need not live on that other repository's
+   default branch. An `unidentified` row is catalog-complete for CI and is
+   **not** a grant to change that path. Private repositories are not named.
 5. **A note in the PR body** when the outward behaviour of this layer changes
    (cache, 503 bodies, `x-front-api`, which paths are answered here versus
    proxied, quote source). Do not name private repositories. Public consumer

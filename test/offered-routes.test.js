@@ -55,12 +55,15 @@ for (const row of catalog.routes) {
   if (!Array.isArray(row.e2e) || row.e2e.length === 0) fail('e2e missing: ' + key);
 
   for (const ref of row.usedIn.concat(row.e2e)) {
-    if (!ref || typeof ref.repo !== 'string' || !REPO.test(ref.repo)) fail('bad repo on ' + key + ': ' + (ref && ref.repo));
-    if (typeof ref.path !== 'string' || !ref.path) fail('bad pointer path on ' + key);
+    if (!ref || typeof ref !== 'object') fail('bad pointer on ' + key);
     const blob = JSON.stringify(ref);
-    if (PRIVATE_NAME.test(blob) || PRIVATE_NAME.test(ref.repo) || PRIVATE_NAME.test(ref.path)) {
-      fail('private or internal name in catalog pointer: ' + key);
+    if (PRIVATE_NAME.test(blob)) fail('private or internal name in catalog pointer: ' + key);
+    if (ref.unidentified === true) {
+      if (typeof ref.note !== 'string' || !ref.note) fail('unidentified pointer needs note: ' + key);
+      continue;
     }
+    if (typeof ref.repo !== 'string' || !REPO.test(ref.repo)) fail('bad repo on ' + key + ': ' + (ref && ref.repo));
+    if (typeof ref.path !== 'string' || !ref.path) fail('bad pointer path on ' + key);
   }
 }
 
