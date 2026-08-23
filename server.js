@@ -23,7 +23,12 @@ const BACKEND = process.env.BACKEND_URL;
 const TTL_MS = +(orFallback(process.env.CACHE_TTL_MS, 300000));
 const CACHE_MAX = +(orFallback(process.env.CACHE_MAX, 500));
 const MAX_RESPONSE_MS = 100;
-const REQUEST_TIMEOUT_MS = Math.min(MAX_RESPONSE_MS, +(orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)));
+function outboundTimeoutMs(raw) {
+  const n = +raw;
+  if (!Number.isFinite(n) || n <= 0) return MAX_RESPONSE_MS;
+  return Math.min(MAX_RESPONSE_MS, n);
+}
+const REQUEST_TIMEOUT_MS = outboundTimeoutMs(orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS));
 const STARTED = new Date().toISOString();
 
 // Public GET prefixes this layer may answer from cache. Authenticated
@@ -61,6 +66,7 @@ try {
       ssl: sslOn ? { rejectUnauthorized: false } : false,
       max: 4,
       idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 90,
     });
     pool.on('error', (err) => console.error('pg pool', err.message));
     attachPoolGuards(pool);
@@ -133,13 +139,18 @@ function attachResponseBudget(req, res, budgetMs) {
         connection: 'close',
         'retry-after': '1',
       });
-      finish();
       return;
     }
     if (!res.destroyed) req.destroy();
-    finish();
   }, fireAt);
+  const hard = setTimeout(() => {
+    if (settled) return;
+    logDeadlineError(req);
+    if (!res.destroyed) req.destroy();
+    finish();
+  }, limit);
   timer.unref();
+  hard.unref();
   res.on('finish', finish);
   res.on('close', finish);
   return true;
@@ -178,7 +189,10 @@ function attachUpgradeBudget(req, socket, up, budgetMs) {
     if (!up.destroyed) up.destroy();
     finish();
   });
-  up.once('close', finish);
+  up.once('close', () => {
+    if (!socket.destroyed) socket.destroy();
+    finish();
+  });
   return true;
 }
 
@@ -188,7 +202,11 @@ function onPoolConnect(client) {
 
 function attachPoolGuards(p) {
   p.on('connect', (client) => {
-    Promise.resolve(onPoolConnect(client)).catch((err) => console.error('pg statement_timeout', err.message));
+    Promise.resolve(onPoolConnect(client)).catch((err) => {
+      console.error('pg statement_timeout', err.message);
+      if (typeof client.release === 'function') client.release(true);
+      else if (typeof client.end === 'function') client.end();
+    });
   });
   return p;
 }
@@ -576,6 +594,7 @@ module.exports = {
   logDeadlineError,
   isUpgradeHandshakeComplete,
   MAX_RESPONSE_MS,
+  outboundTimeoutMs,
   setSwaggerSpec,
   getSwaggerSpec,
   setPool,

@@ -228,6 +228,7 @@ async function main() {
     canWrite,
     isUpgradeHandshakeComplete,
     MAX_RESPONSE_MS,
+    outboundTimeoutMs,
     setSwaggerSpec,
     getSwaggerSpec,
     setPool,
@@ -251,6 +252,10 @@ async function main() {
   if (canWrite(deadRes)) fail('canWrite destroyed');
   if (REQUEST_TIMEOUT_MS !== 50) fail('REQUEST_TIMEOUT_MS env');
   if (REQUEST_TIMEOUT_MS > MAX_RESPONSE_MS) fail('REQUEST_TIMEOUT_MS cap');
+  if (outboundTimeoutMs(0) !== 100 || outboundTimeoutMs(-1) !== 100 || outboundTimeoutMs('nope') !== 100) {
+    fail('outboundTimeoutMs invalid');
+  }
+  if (outboundTimeoutMs(50) !== 50 || outboundTimeoutMs(20000) !== 100) fail('outboundTimeoutMs cap');
   if (!isUpgradeHandshakeComplete('HTTP/1.1 101 Switching Protocols\r\n\r\n')) fail('handshake 101');
   if (isUpgradeHandshakeComplete('HTTP/1.1 101\r\n')) fail('handshake incomplete');
   if (isUpgradeHandshakeComplete('HTTP/1.1 400 Bad Request\r\n\r\n')) fail('handshake 400');
@@ -750,6 +755,15 @@ process.exit(0);`,
   if (!dRes.headers || dRes.headers.connection !== 'close') fail('deadline 503 connection close');
   if (dReq.destroyed) fail('deadline 503 must not destroy before flush');
 
+  const { req: kReq, res: kRes } = mockReqRes();
+  kRes.end = function end(body) {
+    this.body = body;
+  };
+  attachResponseBudget(kReq, kRes, 15);
+  await sleep(40);
+  if (kRes.status !== 503) fail('hard cut 503');
+  if (!kReq.destroyed) fail('hard cut after 503 without finish');
+
   const { req: hReq, res: hRes } = mockReqRes();
   attachResponseBudget(hReq, hRes, 15);
   hRes.writeHead(200, {});
@@ -785,6 +799,20 @@ process.exit(0);`,
   await sleep(40);
   if (!hangClient.destroyed || !hangUp.destroyed) fail('upgrade deadline');
 
+  function mockSockQuiet() {
+    const sock = new EventEmitter();
+    sock.destroyed = false;
+    sock.destroy = function destroy() {
+      this.destroyed = true;
+    };
+    return sock;
+  }
+  const quietClient = mockSockQuiet();
+  const quietUp = mockSockQuiet();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, quietClient, quietUp, 15);
+  await sleep(40);
+  if (!quietClient.destroyed || !quietUp.destroyed) fail('upgrade timer destroy pair');
+
   const okClient = mockSock();
   const okUp = mockSock();
   attachUpgradeBudget({ method: 'GET', url: '/socket' }, okClient, okUp, 15);
@@ -816,6 +844,13 @@ process.exit(0);`,
   await sleep(40);
   if (!badClient.destroyed || !badUp.destroyed) fail('upgrade non-101 must not lift deadline');
 
+  const closeClient = mockSock();
+  const closeUp = mockSock();
+  attachUpgradeBudget({ method: 'GET', url: '/socket' }, closeClient, closeUp, 15);
+  closeUp.emit('data', Buffer.from('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n'));
+  closeUp.emit('close');
+  if (!closeClient.destroyed) fail('non-101 up close must cut client');
+
   const closedClient = mockSock();
   const closedUp = mockSock();
   attachUpgradeBudget({ method: 'GET', url: '/socket' }, closedClient, closedUp, 15);
@@ -831,11 +866,24 @@ process.exit(0);`,
   const fakePool = new EventEmitter();
   attachPoolGuards(fakePool);
   fakePool.emit('connect', { query: () => Promise.resolve() });
-  fakePool.emit('connect', { query: () => Promise.reject(new Error('no timeout')) });
+  let dropped = false;
+  fakePool.emit('connect', {
+    query: () => Promise.reject(new Error('no timeout')),
+    release(force) {
+      dropped = force === true;
+    },
+  });
+  fakePool.emit('connect', {
+    query: () => Promise.reject(new Error('no timeout')),
+    end() {
+      dropped = true;
+    },
+  });
   await onPoolConnect({ query: () => Promise.resolve('ok') });
   await sleep(20);
   console.error = origPgErr;
   if (!loggedPg.some((line) => line.indexOf('pg statement_timeout') >= 0)) fail('pool statement_timeout error');
+  if (!dropped) fail('pool SET fail must drop client');
 
   const deadClientSock = mockSock();
   const deadUpSock = mockSock();
@@ -912,6 +960,20 @@ process.exit(0);`,
     { env: childEnv({ REQUEST_TIMEOUT_MS: '20000' }), encoding: 'utf8', timeout: 3000 },
   );
   if (capHigh.status !== 0) fail('REQUEST_TIMEOUT_MS must not exceed 100: ' + capHigh.status);
+
+  const capZero = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `process.env.BACKEND_URL='http://127.0.0.1:9';
+process.env.REQUEST_TIMEOUT_MS='0';
+const s=require(${JSON.stringify(serverJs)});
+if(s.REQUEST_TIMEOUT_MS!==100) process.exit(2);
+process.exit(0);`,
+    ],
+    { env: childEnv({ REQUEST_TIMEOUT_MS: '0' }), encoding: 'utf8', timeout: 3000 },
+  );
+  if (capZero.status !== 0) fail('REQUEST_TIMEOUT_MS=0 must not disable timeout: ' + capZero.status);
 
   const pgThrow = spawnSync(
     process.execPath,
