@@ -10,7 +10,7 @@ Public HTTP layer in front of the DFX backend. This process answers a fixed set 
 BACKEND_URL=http://127.0.0.1:3000 node server.js
 ```
 
-Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS`, `CACHE_MAX`, `SQL_HOST` / `SQL_PORT` / `SQL_DB` / `SQL_USERNAME` / `SQL_PASSWORD` / `SQL_SSL`, `QUOTE_BOOK_REFRESH` (`1` to enable the quote poller; off by default).
+Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS`, `CACHE_MAX`, `REQUEST_TIMEOUT_MS` (20000), `SQL_HOST` / `SQL_PORT` / `SQL_DB` / `SQL_USERNAME` / `SQL_PASSWORD` / `SQL_SSL`, `QUOTE_BOOK_REFRESH` (`1` to enable the quote poller; off by default). `FRONT_API_EXIT_AFTER_BOOT=1` is for the coverage collection run only: the process exits shortly after listen.
 
 ## Images
 
@@ -21,3 +21,6 @@ This repository does not describe a particular deployment environment.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Reviewers follow [REVIEW.md](REVIEW.md).
+Every path this process answers itself is listed in [offered-routes.json](offered-routes.json)
+with a public usage pointer and a frontend E2E pointer, or `unidentified: true`
+plus a note when none is named.

@@ -1,0 +1,467 @@
+{
+  "title": "Offered routes: usage and frontend E2E",
+  "rules": "Every path this process answers itself has a row. usedIn is a public consumer repo+file, or unidentified:true with a note when no public call site is named. e2e is a frontend-inclusive E2E in a public repo (any branch), or unidentified:true when none is named. This repo's CI checks fields only and does not run foreign suites. Private repositories are not named. Proxied backend routes are not listed.",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "isServedPath and isCacheable: unauthenticated GET / may be answered from the GET cache, otherwise proxied. No dedicated public frontend call site named."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that asserts GET / of this process. Required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/version",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/compose.yml",
+          "note": "e2e-stack compose healthcheck is GET /version."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "compose.yml usedIn is a healthcheck, not a frontend UI flow. A frontend E2E that hits GET /version is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/swagger",
+      "match": "exact",
+      "aliases": ["/swagger/", "/swagger-ui", "/swagger-ui/"],
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "This process serves the filtered swagger UI HTML. No separate public consumer call site named."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "Swagger HTML is this process's own UI. No separate consumer E2E named that opens /swagger in a browser. Required before changing swagger HTML behaviour."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/swagger-json",
+      "match": "exact",
+      "aliases": ["/swagger-json/"],
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "Allowlist snapshot loaded by the swagger UI this process serves. No separate public consumer call site named."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No consumer E2E named that fetches /swagger-json in a browser. Required before changing the snapshot."
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/buy/quote",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/core/src/client/BuyApi.ts",
+          "note": "BuyApi.quote PUTs BuyUrl.quote (buy/quote) without a session token."
+        },
+        {
+          "repo": "DFXswiss/dfx-wallet",
+          "path": "src/features/dfx-backend/services/payment-service.ts",
+          "note": "Wallet payment service PUTs /v1/buy/quote."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "DFXswiss/services e2e-stack/specs/buy.spec.ts exercises PUT /v1/buy/paymentInfos, not this RAM quote path. A frontend E2E that PUTs /v1/buy/quote is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/sell/quote",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/core/src/client/SellApi.ts",
+          "note": "SellApi.quote PUTs SellUrl.quote (sell/quote)."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "DFXswiss/services e2e-stack/specs/sell-swap.spec.ts is the widget sell frontend; it has not been shown to PUT /v1/sell/quote (vs payment-info paths). A frontend E2E that PUTs this path is required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/swap/quote",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/core/src/client/SwapApi.ts",
+          "note": "SwapApi.quote PUTs SwapUrl.quote (swap/quote)."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "A frontend E2E that PUTs /v1/swap/quote is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/asset",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/asset.hook.ts",
+          "note": "GET AssetUrl.get (asset)."
+        },
+        {
+          "repo": "DFXswiss/services",
+          "path": "src/screens/buy.screen.tsx",
+          "note": "Widget buy screen loads assets through @dfx.swiss/react."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Widget buy flow: frontend Playwright asserts against GET /v1/asset."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/fiat",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/fiat.hook.ts",
+          "note": "GET FiatUrl.get (fiat)."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_fiat_service.dart",
+          "note": "Wallet GET /v1/fiat."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Widget buy flow: frontend Playwright checks GET /v1/fiat."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/country",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/country.hook.ts",
+          "note": "GET CountryUrl.get (country)."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_country_service.dart",
+          "note": "Wallet GET /v1/country."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Widget buy flow: frontend Playwright loads public lists including country."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/language",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/language.hook.ts",
+          "note": "GET LanguageUrl.get (language)."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_language_service.dart",
+          "note": "Wallet GET /v1/language."
+        }
+      ],
+      "e2e": [
+        {
+          "repo": "DFXswiss/services",
+          "path": "e2e-stack/specs/buy.spec.ts",
+          "note": "Widget buy flow: frontend Playwright loads GET /v1/language."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/statistic",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "Public GET cache prefix on the swagger allowlist. No named call site in DFXswiss/packages or DFXswiss/services."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that hits /v1/statistic live. Required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/coin",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "Public GET cache prefix on the swagger allowlist. No named call site in DFXswiss/packages or DFXswiss/services."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that hits /v1/coin live. Required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setting",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/settings.hook.ts",
+          "note": "GET SettingsUrl.infoBanner (setting/infoBanner)."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "Widget specs intercept GET /v1/setting/infoBanner; that is not E2E of this layer. A live frontend E2E is required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/bank",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/bank.hook.ts",
+          "note": "GET BankUrl.get (bank)."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs /v1/bank live through the UI. Required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/app",
+      "match": "prefix",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "Public GET cache prefix on the swagger allowlist. No named call site in DFXswiss/packages."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that hits /v1/app live. Required before changing this prefix."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/buyPrice",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "RAM GET. RealUnitCH/app calls the parallel /v1/realunit/brokerbot/buyPrice, not this /quote/ path."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs this path live. Required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/buyShares",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "RAM GET. RealUnitCH/app calls /v1/realunit/brokerbot/buyShares, not this /quote/ path."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs this path live. Required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/info",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "RAM GET. No named public call site in RealUnitCH/app or DFXswiss/services."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs this path live. Required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/quote/price",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "RAM GET. No named public call site in RealUnitCH/app or DFXswiss/services."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs this path live. Required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/buyPrice",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "DfxBrokerbotService._buyPricePath."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/screens/buy/cubits/buy_converter/buy_converter_cubit.dart",
+          "note": "Buy converter calls getBuyPrice."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "RealUnitCH/app has widget/golden tests for the buy page, not a Maestro/device E2E that hits this path live. Required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/buyShares",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
+          "note": "DfxBrokerbotService._buySharesPath."
+        },
+        {
+          "repo": "RealUnitCH/app",
+          "path": "lib/screens/buy/cubits/buy_converter/buy_converter_cubit.dart",
+          "note": "Buy converter calls getBuyShares."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "Widget/golden tests exist; Maestro/device E2E that hits this path live is required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/info",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "RAM GET. RealUnitCH/app brokerbot client does not call /brokerbot/info."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs this path live. Required before changing it."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/realunit/brokerbot/price",
+      "match": "exact",
+      "usedIn": [
+        {
+          "unidentified": true,
+          "note": "RAM GET. RealUnitCH/app brokerbot client does not call /brokerbot/price."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "No frontend E2E named that GETs this path live. Required before changing it."
+        }
+      ]
+    }
+  ]
+}

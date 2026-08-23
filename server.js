@@ -4,16 +4,26 @@ const http = require('http');
 const net = require('net');
 const { URL } = require('url');
 
+function orFallback(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return value;
+}
+
+function backendPortFor(target) {
+  return +(orFallback(target.port, target.protocol === 'https:' ? '443' : '80'));
+}
+
 if (!process.env.BACKEND_URL) {
   console.error('BACKEND_URL required');
   process.exit(1);
 }
-const PORT = +(process.env.PORT || 3000);
-const BIND = process.env.BIND || '0.0.0.0';
+const PORT = +(orFallback(process.env.PORT, 3000));
+const BIND = orFallback(process.env.BIND, '0.0.0.0');
 const BACKEND = process.env.BACKEND_URL;
-const TTL_MS = +(process.env.CACHE_TTL_MS || 15000);
+const TTL_MS = +(orFallback(process.env.CACHE_TTL_MS, 15000));
 const QUOTE_TTL_MS = 300000;
-const CACHE_MAX = +(process.env.CACHE_MAX || 500);
+const CACHE_MAX = +(orFallback(process.env.CACHE_MAX, 500));
+const REQUEST_TIMEOUT_MS = +(orFallback(process.env.REQUEST_TIMEOUT_MS, 20000));
 const STARTED = new Date().toISOString();
 
 // Public GET prefixes this layer may answer from cache. Authenticated
@@ -99,7 +109,7 @@ function httpJson(method, urlPath, body) {
     const req = http.request(
       {
         hostname: target.hostname,
-        port: target.port || 80,
+        port: backendPortFor(target),
         path: urlPath,
         method,
         headers: payload
@@ -120,7 +130,7 @@ function httpJson(method, urlPath, body) {
       },
     );
     req.on('error', reject);
-    attachRequestTimeout(req, 20000, () => {
+    attachRequestTimeout(req, REQUEST_TIMEOUT_MS, () => {
       req.destroy();
       reject(new Error('timeout'));
     });
@@ -155,22 +165,22 @@ const RAM_GET_PATHS = [
   '/v1/realunit/brokerbot/price',
 ];
 
+const EXACT_GET_PATHS = [
+  '/',
+  '/version',
+  '/swagger',
+  '/swagger/',
+  '/swagger-json',
+  '/swagger-json/',
+  '/swagger-ui',
+  '/swagger-ui/',
+];
+
+const EXACT_PUT_PATHS = ['/v1/buy/quote', '/v1/sell/quote', '/v1/swap/quote'];
+
 function isServedPath(path) {
   const p = (path || '/').split('?')[0];
-  if (
-    p === '/' ||
-    p === '/version' ||
-    p === '/swagger' ||
-    p === '/swagger/' ||
-    p === '/swagger-json' ||
-    p === '/swagger-json/' ||
-    p === '/swagger-ui' ||
-    p === '/swagger-ui/'
-  ) {
-    return true;
-  }
-  if (p === '/v1/buy/quote' || p === '/v1/sell/quote' || p === '/v1/swap/quote') return true;
-  if (RAM_GET_PATHS.includes(p)) return true;
+  if (EXACT_GET_PATHS.includes(p) || EXACT_PUT_PATHS.includes(p) || RAM_GET_PATHS.includes(p)) return true;
   return CACHE_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
 }
 
@@ -454,6 +464,7 @@ async function tryDbRead(path) {
   const spec = DB_READ[path];
   if (!spec) return null;
   const result = await pool.query(spec.sql);
+  if (!result || !result.rows) return null;
   return Buffer.from(JSON.stringify(spec.map(result.rows)));
 }
 
@@ -461,7 +472,7 @@ function proxy(req, res, stale) {
   const target = new URL(BACKEND);
   const opts = {
     hostname: target.hostname,
-    port: target.port || (target.protocol === 'https:' ? 443 : 80),
+    port: backendPortFor(target),
     path: req.url,
     method: req.method,
     headers: { ...req.headers, host: target.host },
@@ -498,7 +509,7 @@ function proxy(req, res, stale) {
     }
     res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
   });
-  attachRequestTimeout(p, 20000, () => {
+  attachRequestTimeout(p, REQUEST_TIMEOUT_MS, () => {
     p.destroy();
   });
   req.pipe(p);
@@ -602,7 +613,7 @@ const server = http.createServer((req, res) => {
 
 server.on('upgrade', (req, socket, head) => {
   const target = new URL(BACKEND);
-  const port = +(target.port || (target.protocol === 'https:' ? 443 : 80));
+  const port = backendPortFor(target);
   const up = net.connect(port, target.hostname, () => {
     const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
     const headers = { ...req.headers, host: target.host };
@@ -623,12 +634,11 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => up.destroy());
 });
 
-if (require.main === module) {
+function boot() {
   server.listen(PORT, BIND, () => {
     console.log(`front-api listening on ${BIND}:${PORT}` + (pool ? ' db-read on' : ''));
     refreshSwagger();
     setInterval(refreshSwagger, 10 * 60 * 1000).unref();
-    // Off by default.
     if (process.env.QUOTE_BOOK_REFRESH === '1') {
       refreshQuoteBook();
       setInterval(refreshQuoteBook, 60 * 1000).unref();
@@ -638,11 +648,75 @@ if (require.main === module) {
   });
 }
 
+function maybeExitAfterBoot() {
+  if (process.env.FRONT_API_EXIT_AFTER_BOOT !== '1') return false;
+  server.once('listening', () => {
+    setTimeout(() => process.exit(0), 200);
+  });
+  server.once('error', () => process.exit(1));
+  return true;
+}
+
+if (require.main === module) {
+  maybeExitAfterBoot();
+  boot();
+}
+
+function setSwaggerSpec(value) {
+  swaggerSpec = value;
+}
+
+function getSwaggerSpec() {
+  return swaggerSpec;
+}
+
+function setPool(value) {
+  pool = value;
+}
+
+function getPool() {
+  return pool;
+}
+
 module.exports = {
+  orFallback,
+  backendPortFor,
   QUOTE_TTL_MS,
+  CACHE_MAX,
+  CACHE_PREFIXES,
+  RAM_GET_PATHS,
+  EXACT_GET_PATHS,
+  EXACT_PUT_PATHS,
   quoteBook,
+  cache,
   pairKey,
   isQuoteFresh,
+  isServedPath,
+  isCacheable,
+  cacheKey,
+  scaleQuote,
+  rememberQuote,
+  refreshQuoteBook,
+  refreshSwagger,
+  swaggerHtml,
+  countryDto,
+  languageDto,
+  tryDbRead,
+  putCache,
+  getCached,
+  highlightJson,
+  localVersion,
+  sendJson,
+  sendVersion,
+  readBody,
+  proxy,
   attachRequestTimeout,
+  setSwaggerSpec,
+  getSwaggerSpec,
+  setPool,
+  getPool,
+  boot,
+  maybeExitAfterBoot,
+  REQUEST_TIMEOUT_MS,
   server,
 };

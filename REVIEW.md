@@ -15,7 +15,10 @@ This item includes the EN/DE PR-body form and GitHub-verified commits.
 
 ## 2. Required CI green on the head SHA
 
-Job `test` is `success` on **exactly this** SHA.
+Job `test` is `success` on **exactly this** SHA. That job includes the 100%
+coverage gate (`c8 --check-coverage` on all four metrics) and the offered-route
+catalog check (`test/test-offered-routes.sh`). A coverage miss or a catalog
+miss is a red job, not a review note.
 
 - `skipped` does not count as green unless this repository documents that skip
   as expected. Today: `test` is not skipped on drafts.
@@ -50,7 +53,9 @@ New or changed branches in `server.js` (503 vs 200, cache hit/miss, allowlist,
 timeout, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
 changes have a pin in `test/test-main-from-develop.sh`. Automatic release-PR
 body-form changes have a pin in `test/test-auto-release-pr.sh`. Green CI
-without a pin for a behaviour change is fail.
+without a pin for a behaviour change is fail. Every production `*.js` file
+must report 100% statements, branches, functions and lines; a new script
+under the coverage include that is untested fails CI.
 
 ## 7. Secrets and boot config
 
@@ -74,3 +79,37 @@ CONTRIBUTING.md or lands untested.
 
 If cache, 503 body, `x-front-api`, self-answered paths, or quote source change:
 it is said in the PR body, a pin is present, and the swagger allowlist matches.
+
+## 11. Usage catalog and frontend E2E
+
+[offered-routes.json](offered-routes.json) lists every path this process
+answers itself. Each row has `usedIn` and `e2e`. A pointer is either a
+public repo + file, or `unidentified: true` plus a note. CI already fails
+when a served path has no row or a row has empty fields. That is not
+enough to merge.
+
+- Fail if the pull request adds, removes, or changes how a self-answered
+  path answers (status, body, cache, quote source, allowlist) and that
+  row's `e2e` is `unidentified` **or** the named E2E does not actually
+  cover that function **including the frontend**.
+- The E2E may live in another public repository. It need not be on that
+  repository's default branch. This repository's CI does **not** run those
+  suites — the reviewer opens the named file (or the named branch / pull
+  request) and checks it.
+- A test that mocks the API and never reaches this process is fail.
+- A unit or widget test without a UI flow through the real endpoint is
+  fail for this item (it may still be a valid pin in the consumer). Do
+  not list those files as `e2e`.
+- Naming a private repository in the catalog, the diff, or the pull
+  request is fail (item 5). Private consumers are a generic note, not a
+  `repo` field.
+- `unidentified` documents a gap. It is not a consumer and not E2E.
+  Changing that path still needs a real pointer, or a written grant on
+  the pull request.
+- Unchanged catalog rows this pull request does not touch: a weak or
+  unidentified E2E is still reported; deferring it needs a written grant
+  on the pull request.
+
+Any fail on this item keeps the pull request as a draft or on changes
+requested. There is no "follow-up E2E" for a new or changed offered
+function unless the reviewer grants that in writing.
