@@ -288,7 +288,8 @@ async function main() {
   if (isServedPath('/v1/buy/quote') || isServedPath('/v1/sell/quote') || isServedPath('/v1/swap/quote')) {
     fail('isServedPath quotes');
   }
-  if (!isServedPath('/v1/asset/1') || !isServedPath(undefined)) fail('isServedPath');
+  if (!isServedPath('/v1/asset') || !isServedPath(undefined)) fail('isServedPath');
+  if (isServedPath('/v1/asset/{id}')) fail('isServedPath template');
   if (isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
   if (isServedPath('/v1/user')) fail('isServedPath user');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');

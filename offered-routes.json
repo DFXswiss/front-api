@@ -82,12 +82,12 @@
     {
       "method": "GET",
       "path": "/v1/asset",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
           "path": "packages/react/src/hooks/asset.hook.ts",
-          "note": "GET AssetUrl.get (asset). Served from the background GET cache; a miss is 503 not served, never forwarded."
+          "note": "GET AssetUrl.get (asset). The list root is served from the background GET cache; a miss is 503 not served. Parameterized subpaths such as /v1/asset/1 are forwarded."
         },
         {
           "repo": "DFXswiss/services",
@@ -106,7 +106,7 @@
     {
       "method": "GET",
       "path": "/v1/fiat",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -130,7 +130,7 @@
     {
       "method": "GET",
       "path": "/v1/country",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -154,7 +154,7 @@
     {
       "method": "GET",
       "path": "/v1/language",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -178,7 +178,7 @@
     {
       "method": "GET",
       "path": "/v1/statistic",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "unidentified": true,
@@ -195,7 +195,7 @@
     {
       "method": "GET",
       "path": "/v1/coin",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "unidentified": true,
@@ -212,7 +212,7 @@
     {
       "method": "GET",
       "path": "/v1/setting",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -223,14 +223,32 @@
       "e2e": [
         {
           "unidentified": true,
-          "note": "Widget specs intercept GET /v1/setting/infoBanner; that is not E2E of this layer. A live frontend E2E is required before changing this prefix."
+          "note": "Widget specs intercept GET /v1/setting/infoBanner; that is not E2E of this layer. A live frontend E2E is required before changing this path."
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setting/infoBanner",
+      "match": "exact",
+      "usedIn": [
+        {
+          "repo": "DFXswiss/packages",
+          "path": "packages/react/src/hooks/settings.hook.ts",
+          "note": "GET SettingsUrl.infoBanner. Concrete swagger GET filled in the background; a miss is 503 not served."
+        }
+      ],
+      "e2e": [
+        {
+          "unidentified": true,
+          "note": "Widget specs intercept GET /v1/setting/infoBanner; that is not E2E of this layer. A live frontend E2E is required before changing this path."
         }
       ]
     },
     {
       "method": "GET",
       "path": "/v1/bank",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "repo": "DFXswiss/packages",
@@ -248,7 +266,7 @@
     {
       "method": "GET",
       "path": "/v1/app",
-      "match": "prefix",
+      "match": "exact",
       "usedIn": [
         {
           "unidentified": true,

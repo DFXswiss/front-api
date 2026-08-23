@@ -9,7 +9,7 @@
 #   quotes must reach the backend                    quote_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
-#   attachRequestTimeout → callback + destroy        proxy_timeout
+#   attachRequestTimeout on background refresh only  refresh_timeout
 #   no in-memory quotes / stale cache                quotes_gone
 #   known GET ≤ 100ms; unknown is forwarded          max_response_100
 #   known miss is 503 not served                     known_local
@@ -92,7 +92,7 @@ grep -q 'function rejectUnserved' "$server_js" || fail "known_local: uncached kn
 grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill off the request path"
 grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "known_local: background refresh must include GET /"
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: refresh set must include concrete swagger GET paths"
-grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "known_local: parameterized swagger paths must not be fetched"
+grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "known_local: parameterized swagger paths must not be served"
 grep -Fq "req.method !== 'GET'" "$server_js" || fail "known_local: GET cache must not treat HEAD as cacheable"
 grep -Fq 'CACHE_PREFIXES.includes(path)' "$server_js" || fail "known_local: list roots are exact; parameterized paths are forwarded"
 grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"

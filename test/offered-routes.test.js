@@ -86,14 +86,14 @@ for (const p of EXACT_GET_PATHS) {
   if (!exactGetNames.has(p)) fail('served GET path missing from exact catalog names: ' + p);
 }
 for (const p of CACHE_PREFIXES) {
-  const row = rowFor('GET', p, 'prefix');
-  if (!row) fail('CACHE_PREFIX missing as prefix row: ' + p);
-  if (!catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath missing from catalog: ' + p + '/x');
+  const row = rowFor('GET', p, 'exact');
+  if (!row) fail('CACHE_PREFIX missing as exact row: ' + p);
+  if (catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath must not be catalogued as served: ' + p + '/x');
 }
 
 const expectedKeys = new Set();
 for (const p of CACHE_PREFIXES) expectedKeys.add('GET ' + p);
-for (const p of ['/', '/version', '/swagger', '/swagger-json']) expectedKeys.add('GET ' + p);
+for (const p of ['/', '/version', '/swagger', '/swagger-json', '/v1/setting/infoBanner']) expectedKeys.add('GET ' + p);
 for (const key of seen) {
   if (!expectedKeys.has(key)) fail('unexpected catalog row: ' + key);
 }

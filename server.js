@@ -215,7 +215,9 @@ const EXACT_GET_PATHS = [
 function isServedPath(path) {
   const p = (path || '/').split('?')[0];
   if (EXACT_GET_PATHS.includes(p)) return true;
-  return CACHE_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
+  if (CACHE_PREFIXES.includes(p)) return true;
+  if (p.indexOf('{') >= 0) return false;
+  return CACHE_PREFIXES.some((pref) => p.startsWith(pref + '/'));
 }
 
 function isKnownLocalRequest(req) {
@@ -419,7 +421,6 @@ function cacheRefreshPaths() {
   const spec = swaggerSpec;
   if (!spec || !spec.paths) return [...out];
   for (const p of Object.keys(spec.paths)) {
-    if (p.indexOf('{') >= 0) continue;
     if (!isServedPath(p)) continue;
     if (p === '/version' || p === '/swagger' || p === '/swagger/' || p === '/swagger-json' || p === '/swagger-json/' || p === '/swagger-ui' || p === '/swagger-ui/') continue;
     const ops = spec.paths[p];
