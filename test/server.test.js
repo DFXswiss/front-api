@@ -95,7 +95,7 @@ function jsonHandler(routes, seen) {
           method: req.method,
           path: p,
           body: Buffer.concat(chunks).toString('utf8'),
-          contentType: req.headers['content-type'] || '',
+          contentType: req.headers['content-type'] ?? '',
         });
       }
       const hit = routes[p];
