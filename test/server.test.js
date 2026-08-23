@@ -2,7 +2,6 @@
 
 const http = require('http');
 const net = require('net');
-const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
@@ -195,6 +194,7 @@ async function main() {
 
   if (maybeExitAfterBoot() !== false) fail('maybeExitAfterBoot off');
   if (orFallback('', 'x') !== 'x' || orFallback('a', 'x') !== 'a') fail('orFallback');
+  if (orFallback(undefined, 'x') !== 'x' || orFallback(null, 'x') !== 'x') fail('orFallback nullish');
   const { URL } = require('url');
   if (backendPortFor(new URL('http://127.0.0.1:9')) !== 9) fail('backendPort set');
   if (backendPortFor(new URL('http://127.0.0.1')) !== 80) fail('backendPort 80');
@@ -881,7 +881,20 @@ s.server.listen(0,'127.0.0.1',()=>{
     { env: childEnv(), encoding: 'utf8', timeout: 8000 },
   );
   void http80;
-  void os;
+  const bootErr = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `process.env.BACKEND_URL='http://127.0.0.1:9';
+process.env.FRONT_API_EXIT_AFTER_BOOT='1';
+const s=require(${JSON.stringify(serverJs)});
+if(!s.maybeExitAfterBoot()) process.exit(2);
+s.server.emit('error', new Error('boot fail'));
+setTimeout(()=>process.exit(3), 1000);`,
+    ],
+    { env: childEnv({ FRONT_API_EXIT_AFTER_BOOT: '1' }), encoding: 'utf8', timeout: 3000 },
+  );
+  if (bootErr.status !== 1) fail('maybeExitAfterBoot error exit: ' + bootErr.status);
 
   console.log('ok front-api server.js');
 }
