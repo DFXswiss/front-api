@@ -21,7 +21,6 @@ const PORT = +(orFallback(process.env.PORT, 3000));
 const BIND = orFallback(process.env.BIND, '0.0.0.0');
 const BACKEND = process.env.BACKEND_URL;
 const TTL_MS = +(orFallback(process.env.CACHE_TTL_MS, 15000));
-const QUOTE_TTL_MS = 300000;
 const CACHE_MAX = +(orFallback(process.env.CACHE_MAX, 500));
 const REQUEST_TIMEOUT_MS = +(orFallback(process.env.REQUEST_TIMEOUT_MS, 20000));
 const STARTED = new Date().toISOString();
@@ -41,7 +40,6 @@ const CACHE_PREFIXES = [
 ];
 
 const cache = new Map();
-const quoteBook = { buy: new Map(), sell: new Map(), swap: new Map(), realunit: new Map(), filledAt: 0 };
 let swaggerSpec = null;
 let pool = null;
 
@@ -102,19 +100,15 @@ function attachRequestTimeout(req, ms, onTimeout) {
   req.setTimeout(ms, onTimeout);
 }
 
-function httpJson(method, urlPath, body) {
+function getBackendJson(urlPath) {
   return new Promise((resolve, reject) => {
     const target = new URL(BACKEND);
-    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
     const req = http.request(
       {
         hostname: target.hostname,
         port: backendPortFor(target),
         path: urlPath,
-        method,
-        headers: payload
-          ? { 'content-type': 'application/json', 'content-length': payload.length }
-          : {},
+        method: 'GET',
       },
       (resp) => {
         const chunks = [];
@@ -134,36 +128,9 @@ function httpJson(method, urlPath, body) {
       req.destroy();
       reject(new Error('timeout'));
     });
-    if (payload) req.write(payload);
     req.end();
   });
 }
-
-function pairKey(kind, body) {
-  const cur = (body && body.currency && (body.currency.id || body.currency.name)) || '';
-  const src =
-    (body && body.sourceAsset && (body.sourceAsset.id || body.sourceAsset.name)) ||
-    (body && body.asset && (body.asset.id || body.asset.uniqueName || body.asset.name)) ||
-    '';
-  const target = (body && body.targetAsset && (body.targetAsset.id || body.targetAsset.name)) || '';
-  const pm = (body && body.paymentMethod) || 'Bank';
-  return [kind, cur, src, target, pm].join('|');
-}
-
-function rememberQuote(map, kind, rec, variants) {
-  for (const body of variants) map.set(pairKey(kind, body), rec);
-}
-
-const RAM_GET_PATHS = [
-  '/v1/realunit/quote/buyPrice',
-  '/v1/realunit/quote/buyShares',
-  '/v1/realunit/quote/info',
-  '/v1/realunit/quote/price',
-  '/v1/realunit/brokerbot/buyPrice',
-  '/v1/realunit/brokerbot/buyShares',
-  '/v1/realunit/brokerbot/info',
-  '/v1/realunit/brokerbot/price',
-];
 
 const EXACT_GET_PATHS = [
   '/',
@@ -176,153 +143,15 @@ const EXACT_GET_PATHS = [
   '/swagger-ui/',
 ];
 
-const EXACT_PUT_PATHS = ['/v1/buy/quote', '/v1/sell/quote', '/v1/swap/quote'];
-
 function isServedPath(path) {
   const p = (path || '/').split('?')[0];
-  if (EXACT_GET_PATHS.includes(p) || EXACT_PUT_PATHS.includes(p) || RAM_GET_PATHS.includes(p)) return true;
+  if (EXACT_GET_PATHS.includes(p)) return true;
   return CACHE_PREFIXES.some((pref) => p === pref || p.startsWith(pref + '/'));
-}
-
-function scaleQuote(stored, body) {
-  const out = JSON.parse(JSON.stringify(stored.json));
-  const rate = Number(out.rate);
-  const wantsScale = body.amount != null || body.targetAmount != null;
-  if (wantsScale && !(rate > 0)) return null;
-  if (body.amount != null) {
-    out.amount = body.amount;
-    out.estimatedAmount = body.amount / rate;
-    if (out.fees && typeof out.fees.rate === 'number') {
-      out.feeAmount = body.amount * (out.fees.rate || 0) + (out.fees.fixed || 0);
-    }
-  } else if (body.targetAmount != null) {
-    out.estimatedAmount = body.targetAmount;
-    out.amount = body.targetAmount * rate;
-    if (out.fees && typeof out.fees.rate === 'number') {
-      out.feeAmount = out.amount * (out.fees.rate || 0) + (out.fees.fixed || 0);
-    }
-  }
-  return out;
-}
-
-function isQuoteFresh(stored) {
-  return !!(stored && stored.json && typeof stored.at === 'number' && Date.now() - stored.at <= QUOTE_TTL_MS);
-}
-
-async function refreshQuoteBook() {
-  try {
-    const assets = (await httpJson('GET', '/v1/asset')).json;
-    const fiats = (await httpJson('GET', '/v1/fiat')).json;
-    if (!Array.isArray(assets) || !Array.isArray(fiats)) return;
-    const named = ['CHF', 'EUR', 'USD']
-      .map((n) => fiats.find((f) => f.name === n))
-      .filter((f) => f && f.id);
-    if (!named.find((f) => f.name === 'CHF')) {
-      console.error('quote book refresh: no CHF, book unchanged');
-      return;
-    }
-    const buy = new Map();
-    const sell = new Map();
-    const swap = new Map();
-    const realunit = new Map();
-    const buyable = assets.filter((a) => a.buyable).slice(0, 12);
-    const sellable = assets.filter((a) => a.sellable).slice(0, 8);
-    for (const fiat of named) {
-      const methods = fiat.name === 'CHF' ? ['Bank', 'Instant'] : ['Bank'];
-      for (const pm of methods) {
-        for (const asset of buyable) {
-          const body = { currency: { id: fiat.id }, asset: { id: asset.id }, amount: 100, paymentMethod: pm };
-          try {
-            const got = await httpJson('PUT', '/v1/buy/quote', body);
-            if (got.status === 200 && got.json) {
-              const rec = { json: got.json, at: Date.now() };
-              rememberQuote(buy, 'buy', rec, [
-                body,
-                { currency: { name: fiat.name }, asset: { id: asset.id }, paymentMethod: pm },
-                { currency: { id: fiat.id }, asset: { name: asset.name }, paymentMethod: pm },
-                { currency: { name: fiat.name }, asset: { name: asset.name }, paymentMethod: pm },
-                ...(asset.uniqueName
-                  ? [
-                      { currency: { id: fiat.id }, asset: { uniqueName: asset.uniqueName }, paymentMethod: pm },
-                      { currency: { name: fiat.name }, asset: { uniqueName: asset.uniqueName }, paymentMethod: pm },
-                    ]
-                  : []),
-              ]);
-            }
-          } catch (err) {
-            console.error('quote refresh buy', fiat.name, asset.id, pm, err.message);
-          }
-        }
-        for (const asset of sellable) {
-          const body = { currency: { id: fiat.id }, asset: { id: asset.id }, amount: 0.01, paymentMethod: pm };
-          try {
-            const got = await httpJson('PUT', '/v1/sell/quote', body);
-            if (got.status === 200 && got.json) {
-              const rec = { json: got.json, at: Date.now() };
-              rememberQuote(sell, 'sell', rec, [
-                body,
-                { currency: { name: fiat.name }, asset: { id: asset.id }, paymentMethod: pm },
-                { currency: { id: fiat.id }, asset: { name: asset.name }, paymentMethod: pm },
-                { currency: { name: fiat.name }, asset: { name: asset.name }, paymentMethod: pm },
-                ...(asset.uniqueName
-                  ? [
-                      { currency: { id: fiat.id }, asset: { uniqueName: asset.uniqueName }, paymentMethod: pm },
-                      { currency: { name: fiat.name }, asset: { uniqueName: asset.uniqueName }, paymentMethod: pm },
-                    ]
-                  : []),
-              ]);
-            }
-          } catch (err) {
-            console.error('quote refresh sell', fiat.name, asset.id, pm, err.message);
-          }
-        }
-      }
-    }
-    const swapSrc = buyable[0];
-    const swapDst = buyable.find((a) => a.id !== (swapSrc && swapSrc.id));
-    if (swapSrc && swapDst) {
-      const body = { sourceAsset: { id: swapSrc.id }, targetAsset: { id: swapDst.id }, amount: 0.01 };
-      try {
-        const got = await httpJson('PUT', '/v1/swap/quote', body);
-        if (got.status === 200 && got.json) {
-          const rec = { json: got.json, at: Date.now() };
-          rememberQuote(swap, 'swap', rec, [
-            body,
-            { sourceAsset: { name: swapSrc.name }, targetAsset: { id: swapDst.id }, amount: 0.01 },
-            { sourceAsset: { id: swapSrc.id }, targetAsset: { name: swapDst.name }, amount: 0.01 },
-            { sourceAsset: { name: swapSrc.name }, targetAsset: { name: swapDst.name }, amount: 0.01 },
-          ]);
-        }
-      } catch (err) {
-        console.error('quote refresh swap', err.message);
-      }
-    }
-    for (const p of RAM_GET_PATHS) {
-      try {
-        const got = await httpJson('GET', p);
-        if (got.status === 200 && got.json) realunit.set(p, { json: got.json, at: Date.now() });
-      } catch (err) {
-        console.error('quote refresh realunit', p, err.message);
-      }
-    }
-    if (buy.size === 0 && sell.size === 0) {
-      console.error('quote book refresh: empty book, keeping previous');
-      return;
-    }
-    if (buy.size > 0) quoteBook.buy = buy;
-    if (sell.size > 0) quoteBook.sell = sell;
-    if (swap.size > 0) quoteBook.swap = swap;
-    if (realunit.size > 0) quoteBook.realunit = realunit;
-    quoteBook.filledAt = Date.now();
-    console.log('quote book buy', quoteBook.buy.size, 'sell', quoteBook.sell.size, 'ru', quoteBook.realunit.size);
-  } catch (err) {
-    console.error('quote book refresh', err.message);
-  }
 }
 
 async function refreshSwagger() {
   try {
-    const got = await httpJson('GET', '/swagger-json');
+    const got = await getBackendJson('/swagger-json');
     if (!got.json || !got.json.paths) return;
     const paths = {};
     for (const [p, ops] of Object.entries(got.json.paths)) {
@@ -348,21 +177,6 @@ window.ui = SwaggerUIBundle({ url: '/swagger-json', dom_id: '#swagger-ui' });
 </script>
 </body></html>
 `;
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
 }
 
 function sendJson(res, status, body, via) {
@@ -468,7 +282,7 @@ async function tryDbRead(path) {
   return Buffer.from(JSON.stringify(spec.map(result.rows)));
 }
 
-function proxy(req, res, stale) {
+function proxy(req, res) {
   const target = new URL(BACKEND);
   const opts = {
     hostname: target.hostname,
@@ -494,20 +308,14 @@ function proxy(req, res, stale) {
   });
   p.on('error', (err) => {
     console.error('proxy error', err.message);
-    if (stale && !res.headersSent) {
-      const headers = { ...stale.headers, 'x-front-api': 'stale' };
-      res.writeHead(stale.status, headers);
-      res.end(stale.body);
-      return;
-    }
     if (!res.headersSent) {
       res.writeHead(503, {
         'content-type': 'application/json',
         'retry-after': '30',
         'access-control-allow-origin': '*',
       });
+      res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
     }
-    res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
   });
   attachRequestTimeout(p, REQUEST_TIMEOUT_MS, () => {
     p.destroy();
@@ -542,54 +350,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const quoteKind =
-    path === '/v1/buy/quote' ? 'buy' : path === '/v1/sell/quote' ? 'sell' : path === '/v1/swap/quote' ? 'swap' : null;
-  if (quoteKind && req.method === 'PUT') {
-    readBody(req)
-      .then((body) => {
-        const stored = quoteBook[quoteKind].get(pairKey(quoteKind, body));
-        if (!isQuoteFresh(stored)) {
-          sendJson(res, 503, { statusCode: 503, message: 'quote unavailable', retryAfter: 30 }, 'local');
-          return;
-        }
-        const scaled = scaleQuote(stored, body);
-        if (!scaled) {
-          sendJson(res, 503, { statusCode: 503, message: 'quote unavailable', retryAfter: 30 }, 'local');
-          return;
-        }
-        sendJson(res, 200, scaled, 'ram');
-      })
-      .catch(() => sendJson(res, 400, { statusCode: 400, message: 'invalid json' }, 'local'));
-    return;
-  }
-
-  if (req.method === 'GET' && RAM_GET_PATHS.includes(path)) {
-    const hitRu = quoteBook.realunit.get(path);
-    if (!isQuoteFresh(hitRu)) {
-      sendJson(res, 503, { statusCode: 503, message: 'quote unavailable', retryAfter: 30 }, 'local');
-      return;
-    }
-    sendJson(res, 200, hitRu.json, 'ram');
-    return;
-  }
-
   const key = cacheKey(req);
   const hit = isCacheable(req) ? getCached(key) : null;
-  const fresh = hit && Date.now() <= hit.exp ? hit : null;
-  if (fresh) {
-    const headers = { ...fresh.headers, 'x-front-api': 'hit' };
-    res.writeHead(fresh.status, headers);
-    res.end(fresh.body);
+  if (hit && Date.now() <= hit.exp) {
+    const headers = { ...hit.headers, 'x-front-api': 'hit' };
+    res.writeHead(hit.status, headers);
+    res.end(hit.body);
     return;
   }
-
-  const stale = hit && Date.now() > hit.exp ? hit : null;
 
   if (pool && req.method === 'GET' && !req.headers.authorization && DB_READ[path]) {
     tryDbRead(path)
       .then((body) => {
         if (!body) {
-          proxy(req, res, stale);
+          proxy(req, res);
           return;
         }
         putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
@@ -597,18 +371,12 @@ const server = http.createServer((req, res) => {
       })
       .catch((err) => {
         console.error('db-read', path, err.message);
-        if (stale) {
-          const headers = { ...stale.headers, 'x-front-api': 'stale' };
-          res.writeHead(stale.status, headers);
-          res.end(stale.body);
-          return;
-        }
-        proxy(req, res, stale);
+        proxy(req, res);
       });
     return;
   }
 
-  proxy(req, res, stale);
+  proxy(req, res);
 });
 
 server.on('upgrade', (req, socket, head) => {
@@ -639,12 +407,6 @@ function boot() {
     console.log(`front-api listening on ${BIND}:${PORT}` + (pool ? ' db-read on' : ''));
     refreshSwagger();
     setInterval(refreshSwagger, 10 * 60 * 1000).unref();
-    if (process.env.QUOTE_BOOK_REFRESH === '1') {
-      refreshQuoteBook();
-      setInterval(refreshQuoteBook, 60 * 1000).unref();
-    } else {
-      console.log('quote book refresh disabled (QUOTE_BOOK_REFRESH=1 to enable)');
-    }
   });
 }
 
@@ -681,22 +443,13 @@ function getPool() {
 module.exports = {
   orFallback,
   backendPortFor,
-  QUOTE_TTL_MS,
   CACHE_MAX,
   CACHE_PREFIXES,
-  RAM_GET_PATHS,
   EXACT_GET_PATHS,
-  EXACT_PUT_PATHS,
-  quoteBook,
   cache,
-  pairKey,
-  isQuoteFresh,
   isServedPath,
   isCacheable,
   cacheKey,
-  scaleQuote,
-  rememberQuote,
-  refreshQuoteBook,
   refreshSwagger,
   swaggerHtml,
   countryDto,
@@ -708,7 +461,6 @@ module.exports = {
   localVersion,
   sendJson,
   sendVersion,
-  readBody,
   proxy,
   attachRequestTimeout,
   setSwaggerSpec,

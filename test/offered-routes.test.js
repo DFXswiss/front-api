@@ -16,7 +16,7 @@ const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
 if (!Array.isArray(catalog.routes) || catalog.routes.length === 0) fail('catalog.routes must be a non-empty array');
 
 process.env.BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:9';
-const { CACHE_PREFIXES, RAM_GET_PATHS, EXACT_GET_PATHS, EXACT_PUT_PATHS, isServedPath } = require('../server.js');
+const { CACHE_PREFIXES, EXACT_GET_PATHS, isServedPath } = require('../server.js');
 
 const PUBLIC_REPOS = new Set([
   'DFXswiss/services',
@@ -24,7 +24,7 @@ const PUBLIC_REPOS = new Set([
   'DFXswiss/dfx-wallet',
   'RealUnitCH/app',
 ]);
-const METHODS = new Set(['GET', 'PUT']);
+const METHODS = new Set(['GET']);
 
 function namesOf(row) {
   return [row.path].concat(Array.isArray(row.aliases) ? row.aliases : []);
@@ -78,20 +78,12 @@ for (const row of catalog.routes) {
 
 const exactGetNames = new Set();
 for (const row of catalog.routes) {
-  if (row.method === 'GET' && row.match === 'exact' && !RAM_GET_PATHS.includes(row.path)) {
+  if (row.method === 'GET' && row.match === 'exact') {
     for (const n of namesOf(row)) exactGetNames.add(n);
   }
 }
 for (const p of EXACT_GET_PATHS) {
   if (!exactGetNames.has(p)) fail('served GET path missing from exact catalog names: ' + p);
-}
-for (const p of EXACT_PUT_PATHS) {
-  const row = rowFor('PUT', p, 'exact');
-  if (!row) fail('PUT quote missing as exact row: ' + p);
-}
-for (const p of RAM_GET_PATHS) {
-  const row = rowFor('GET', p, 'exact');
-  if (!row) fail('RAM GET missing as exact row: ' + p);
 }
 for (const p of CACHE_PREFIXES) {
   const row = rowFor('GET', p, 'prefix');
@@ -101,8 +93,6 @@ for (const p of CACHE_PREFIXES) {
 
 const expectedKeys = new Set();
 for (const p of CACHE_PREFIXES) expectedKeys.add('GET ' + p);
-for (const p of RAM_GET_PATHS) expectedKeys.add('GET ' + p);
-for (const p of EXACT_PUT_PATHS) expectedKeys.add('PUT ' + p);
 for (const p of ['/', '/version', '/swagger', '/swagger-json']) expectedKeys.add('GET ' + p);
 for (const key of seen) {
   if (!expectedKeys.has(key)) fail('unexpected catalog row: ' + key);

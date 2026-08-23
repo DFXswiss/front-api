@@ -41,7 +41,11 @@
       "method": "GET",
       "path": "/swagger",
       "match": "exact",
-      "aliases": ["/swagger/", "/swagger-ui", "/swagger-ui/"],
+      "aliases": [
+        "/swagger/",
+        "/swagger-ui",
+        "/swagger-ui/"
+      ],
       "usedIn": [
         {
           "unidentified": true,
@@ -59,7 +63,9 @@
       "method": "GET",
       "path": "/swagger-json",
       "match": "exact",
-      "aliases": ["/swagger-json/"],
+      "aliases": [
+        "/swagger-json/"
+      ],
       "usedIn": [
         {
           "unidentified": true,
@@ -70,65 +76,6 @@
         {
           "unidentified": true,
           "note": "No consumer E2E named that fetches /swagger-json in a browser. Required before changing the snapshot."
-        }
-      ]
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/buy/quote",
-      "match": "exact",
-      "usedIn": [
-        {
-          "repo": "DFXswiss/packages",
-          "path": "packages/core/src/client/BuyApi.ts",
-          "note": "BuyApi.quote PUTs BuyUrl.quote (buy/quote) without a session token."
-        },
-        {
-          "repo": "DFXswiss/dfx-wallet",
-          "path": "src/features/dfx-backend/services/payment-service.ts",
-          "note": "Wallet payment service PUTs /v1/buy/quote."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "DFXswiss/services e2e-stack/specs/buy.spec.ts exercises PUT /v1/buy/paymentInfos, not this RAM quote path. A frontend E2E that PUTs /v1/buy/quote is required before changing this path."
-        }
-      ]
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/sell/quote",
-      "match": "exact",
-      "usedIn": [
-        {
-          "repo": "DFXswiss/packages",
-          "path": "packages/core/src/client/SellApi.ts",
-          "note": "SellApi.quote PUTs SellUrl.quote (sell/quote)."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "DFXswiss/services e2e-stack/specs/sell-swap.spec.ts is the widget sell frontend; it has not been shown to PUT /v1/sell/quote (vs payment-info paths). A frontend E2E that PUTs this path is required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/swap/quote",
-      "match": "exact",
-      "usedIn": [
-        {
-          "repo": "DFXswiss/packages",
-          "path": "packages/core/src/client/SwapApi.ts",
-          "note": "SwapApi.quote PUTs SwapUrl.quote (swap/quote)."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "A frontend E2E that PUTs /v1/swap/quote is required before changing this path."
         }
       ]
     },
@@ -312,154 +259,6 @@
         {
           "unidentified": true,
           "note": "No frontend E2E named that hits /v1/app live. Required before changing this prefix."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/quote/buyPrice",
-      "match": "exact",
-      "usedIn": [
-        {
-          "unidentified": true,
-          "note": "RAM GET. RealUnitCH/app calls the parallel /v1/realunit/brokerbot/buyPrice, not this /quote/ path."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "No frontend E2E named that GETs this path live. Required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/quote/buyShares",
-      "match": "exact",
-      "usedIn": [
-        {
-          "unidentified": true,
-          "note": "RAM GET. RealUnitCH/app calls /v1/realunit/brokerbot/buyShares, not this /quote/ path."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "No frontend E2E named that GETs this path live. Required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/quote/info",
-      "match": "exact",
-      "usedIn": [
-        {
-          "unidentified": true,
-          "note": "RAM GET. No named public call site in RealUnitCH/app or DFXswiss/services."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "No frontend E2E named that GETs this path live. Required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/quote/price",
-      "match": "exact",
-      "usedIn": [
-        {
-          "unidentified": true,
-          "note": "RAM GET. No named public call site in RealUnitCH/app or DFXswiss/services."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "No frontend E2E named that GETs this path live. Required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/brokerbot/buyPrice",
-      "match": "exact",
-      "usedIn": [
-        {
-          "repo": "RealUnitCH/app",
-          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
-          "note": "DfxBrokerbotService._buyPricePath."
-        },
-        {
-          "repo": "RealUnitCH/app",
-          "path": "lib/screens/buy/cubits/buy_converter/buy_converter_cubit.dart",
-          "note": "Buy converter calls getBuyPrice."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "RealUnitCH/app has widget/golden tests for the buy page, not a Maestro/device E2E that hits this path live. Required before changing this path."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/brokerbot/buyShares",
-      "match": "exact",
-      "usedIn": [
-        {
-          "repo": "RealUnitCH/app",
-          "path": "lib/packages/service/dfx/dfx_brokerbot_service.dart",
-          "note": "DfxBrokerbotService._buySharesPath."
-        },
-        {
-          "repo": "RealUnitCH/app",
-          "path": "lib/screens/buy/cubits/buy_converter/buy_converter_cubit.dart",
-          "note": "Buy converter calls getBuyShares."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "Widget/golden tests exist; Maestro/device E2E that hits this path live is required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/brokerbot/info",
-      "match": "exact",
-      "usedIn": [
-        {
-          "unidentified": true,
-          "note": "RAM GET. RealUnitCH/app brokerbot client does not call /brokerbot/info."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "No frontend E2E named that GETs this path live. Required before changing it."
-        }
-      ]
-    },
-    {
-      "method": "GET",
-      "path": "/v1/realunit/brokerbot/price",
-      "match": "exact",
-      "usedIn": [
-        {
-          "unidentified": true,
-          "note": "RAM GET. RealUnitCH/app brokerbot client does not call /brokerbot/price."
-        }
-      ],
-      "e2e": [
-        {
-          "unidentified": true,
-          "note": "No frontend E2E named that GETs this path live. Required before changing it."
         }
       ]
     }

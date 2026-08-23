@@ -154,20 +154,12 @@ async function main() {
 
   const s = require(serverJs);
   const {
-    QUOTE_TTL_MS,
     CACHE_MAX,
     CACHE_PREFIXES,
-    RAM_GET_PATHS,
-    quoteBook,
     cache,
-    pairKey,
-    isQuoteFresh,
     isServedPath,
     isCacheable,
     cacheKey,
-    scaleQuote,
-    rememberQuote,
-    refreshQuoteBook,
     refreshSwagger,
     swaggerHtml,
     countryDto,
@@ -201,34 +193,17 @@ async function main() {
   if (backendPortFor(new URL('http://127.0.0.1:9')) !== 9) fail('backendPort set');
   if (backendPortFor(new URL('http://127.0.0.1')) !== 80) fail('backendPort 80');
   if (backendPortFor(new URL('https://example.com')) !== 443) fail('backendPort 443');
-  if (!(QUOTE_TTL_MS > 0) || !(CACHE_MAX > 0)) fail('constants');
+  if (!(CACHE_MAX > 0)) fail('constants');
   if (!CACHE_PREFIXES.includes('/v1/asset')) fail('CACHE_PREFIXES');
-  if (!RAM_GET_PATHS.includes('/v1/realunit/quote/price')) fail('RAM_GET_PATHS');
   if (getPool() !== null) fail('pool default');
-
-  if (!isQuoteFresh({ json: { ok: 1 }, at: Date.now() })) fail('isQuoteFresh fresh');
-  if (isQuoteFresh({ json: { ok: 1 }, at: Date.now() - QUOTE_TTL_MS - 1 })) fail('isQuoteFresh stale');
-  if (isQuoteFresh(undefined) || isQuoteFresh({ json: { ok: 1 } })) fail('isQuoteFresh miss');
-
-  if (pairKey('buy', {}) !== 'buy||||Bank') fail('pairKey empty');
-  if (pairKey('buy', { currency: { name: 'CHF' }, asset: { uniqueName: 'BTC' } }).indexOf('CHF') < 0) {
-    fail('pairKey uniqueName');
-  }
-  if (pairKey('swap', { sourceAsset: { id: 1 }, targetAsset: { name: 'ETH' } }).indexOf('ETH') < 0) {
-    fail('pairKey swap');
-  }
-  if (pairKey('buy', { currency: { id: 1 }, asset: { name: 'BTC' }, paymentMethod: 'Instant' }).indexOf('Instant') < 0) {
-    fail('pairKey instant');
-  }
-  if (pairKey('buy', { currency: { id: 1 }, sourceAsset: { name: 'A' } }).indexOf('A') < 0) fail('pairKey source');
 
   if (!isServedPath('/version') || !isServedPath('/swagger/') || !isServedPath('/swagger-json/')) fail('isServedPath meta');
   if (!isServedPath('/swagger-ui') || !isServedPath('/swagger-ui/')) fail('isServedPath ui');
-  if (!isServedPath('/v1/buy/quote') || !isServedPath('/v1/sell/quote') || !isServedPath('/v1/swap/quote')) {
+  if (isServedPath('/v1/buy/quote') || isServedPath('/v1/sell/quote') || isServedPath('/v1/swap/quote')) {
     fail('isServedPath quotes');
   }
   if (!isServedPath('/v1/asset/1') || !isServedPath(undefined)) fail('isServedPath');
-  if (!isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
+  if (isServedPath('/v1/realunit/quote/price')) fail('isServedPath ram');
   if (isServedPath('/v1/user')) fail('isServedPath user');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
@@ -240,24 +215,6 @@ async function main() {
   if (isCacheable({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('cache auth');
   if (isCacheable({ method: 'GET', url: '/v1/user', headers: {} })) fail('cache user');
   if (cacheKey({ method: 'GET', url: '/a' }) !== 'GET /a') fail('cacheKey');
-
-  const scaledAmt = scaleQuote({ json: { rate: 2, fees: { rate: 0.01, fixed: 1 } } }, { amount: 100 });
-  if (scaledAmt.estimatedAmount !== 50 || scaledAmt.feeAmount !== 2) fail('scale amount');
-  const scaledTgt = scaleQuote({ json: { rate: 2, fees: { rate: 0.01 } } }, { targetAmount: 10 });
-  if (scaledTgt.amount !== 20) fail('scale target');
-  if (scaleQuote({ json: { rate: 0 } }, { amount: 1 }) !== null) fail('scale zero');
-  if (scaleQuote({ json: { rate: 2 } }, {}).rate !== 2) fail('scale none');
-  if (scaleQuote({ json: { rate: 2, fees: { rate: 'x' } } }, { amount: 10 }).feeAmount !== undefined) {
-    fail('scale fees type');
-  }
-  const scaledZeroFee = scaleQuote({ json: { rate: 2, fees: { rate: 0, fixed: 0 } } }, { amount: 10 });
-  if (scaledZeroFee.feeAmount !== 0) fail('scale fee fallback');
-  const scaledZeroFeeT = scaleQuote({ json: { rate: 2, fees: { rate: 0, fixed: 0 } } }, { targetAmount: 10 });
-  if (scaledZeroFeeT.feeAmount !== 0) fail('scale fee fallback target');
-
-  const m = new Map();
-  rememberQuote(m, 'buy', { json: { rate: 1 }, at: 1 }, [{ currency: { id: 1 }, asset: { id: 2 } }]);
-  if (m.size !== 1) fail('rememberQuote');
 
   if (swaggerHtml().indexOf('swagger-ui') < 0) fail('swaggerHtml');
   if (localVersion().commit !== 'front-api') fail('localVersion');
@@ -327,10 +284,6 @@ async function main() {
   if ((await tryDbRead('/v1/country')) !== null) fail('tryDbRead null result');
   setPool(null);
 
-  await refreshQuoteBook();
-  if (quoteBook.buy.size === 0 || quoteBook.sell.size === 0 || quoteBook.realunit.size === 0) {
-    fail('refreshQuoteBook empty');
-  }
   await refreshSwagger();
   if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/user']) {
     fail('refreshSwagger allowlist');
@@ -338,41 +291,16 @@ async function main() {
 
   const port = await listen(server);
   try {
-    quoteBook.realunit.clear();
-    let got = await request(port, 'GET', '/v1/realunit/quote/price');
-    if (got.status !== 503) fail('ram_miss');
-    quoteBook.realunit.set('/v1/realunit/quote/price', { json: { price: 1 }, at: Date.now() - QUOTE_TTL_MS - 1 });
-    got = await request(port, 'GET', '/v1/realunit/quote/price');
-    if (got.status !== 503) fail('ram_stale');
-    quoteBook.realunit.set('/v1/realunit/quote/price', { json: { price: 42 }, at: Date.now() });
-    got = await request(port, 'GET', '/v1/realunit/quote/price');
-    if (got.status !== 200 || got.headers['x-front-api'] !== 'ram') fail('ram_fresh');
-    quoteBook.realunit.set('/v1/realunit/brokerbot/price', { json: { price: 3 }, at: Date.now() });
-    got = await request(port, 'GET', '/v1/realunit/brokerbot/price');
-    if (got.status !== 200) fail('ram brokerbot');
-
     const buyBody = { currency: { id: 1 }, asset: { id: 2 }, amount: 100, paymentMethod: 'Bank' };
-    quoteBook.buy.clear();
-    got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
-    if (got.status !== 503) fail('buy miss');
-    quoteBook.buy.set(pairKey('buy', buyBody), { json: { rate: 2 }, at: Date.now() });
-    got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
-    if (got.status !== 200) fail('buy fresh');
-    quoteBook.buy.set(pairKey('buy', buyBody), { json: { rate: 0 }, at: Date.now() });
-    got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
-    if (got.status !== 503) fail('buy zero');
-    got = await request(port, 'PUT', '/v1/buy/quote', Buffer.from('not-json'));
-    if (got.status !== 400) fail('buy invalid json');
-    got = await request(port, 'PUT', '/v1/buy/quote', Buffer.alloc(0));
-    if (got.status !== 503 && got.status !== 200) fail('buy empty body');
-
-    quoteBook.sell.set(pairKey('sell', buyBody), { json: { rate: 2 }, at: Date.now() });
+    let got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
+    if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy buy body');
     got = await request(port, 'PUT', '/v1/sell/quote', buyBody);
-    if (got.status !== 200) fail('sell');
+    if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy sell body');
     const swapBody = { sourceAsset: { id: 1 }, targetAsset: { id: 2 }, amount: 0.01 };
-    quoteBook.swap.set(pairKey('swap', swapBody), { json: { rate: 2 }, at: Date.now() });
     got = await request(port, 'PUT', '/v1/swap/quote', swapBody);
-    if (got.status !== 200) fail('swap');
+    if (got.status !== 200 || got.body.indexOf('"rate":2') < 0) fail('quote_proxy swap body');
+    got = await request(port, 'GET', '/v1/realunit/quote/price');
+    if (got.status !== 200 || got.body.indexOf('"price":1') < 0) fail('quote_proxy realunit');
 
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
@@ -433,7 +361,8 @@ async function main() {
       },
     });
     got = await request(port, 'GET', '/v1/language');
-    if (got.headers['x-front-api'] !== 'stale') fail('db catch stale');
+    if (got.headers['x-front-api'] === 'stale') fail('db catch must not serve stale');
+    if (got.body.includes('{"s":1}')) fail('db catch must not replay expired cache');
     cache.delete('GET /v1/language');
     cache.clear();
     got = await request(port, 'GET', '/v1/language');
@@ -496,7 +425,7 @@ async function main() {
     fakeReq.method = 'GET';
     fakeReq.url = '/nope';
     fakeReq.headers = {};
-    proxy(fakeReq, sent, null);
+    proxy(fakeReq, sent);
     const noUrl = fakeRes();
     const noUrlReq = new http.IncomingMessage(new net.Socket());
     noUrlReq.method = 'GET';
@@ -505,11 +434,16 @@ async function main() {
     server.emit('request', noUrlReq, noUrl);
 
     await close(backend);
+    got = await request(port, 'PUT', '/v1/buy/quote', buyBody);
+    if (got.status !== 503) fail('quote_proxy dead backend');
+    if (!got.body.includes('backend-api unavailable')) fail('quote_proxy dead body');
+    if (got.body.includes('quote unavailable')) fail('quote_proxy must not say quote unavailable');
     cache.clear();
     putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"stale":true}'));
     cache.get('GET /v1/statistic').exp = Date.now() - 1;
     got = await request(port, 'GET', '/v1/statistic');
-    if (got.headers['x-front-api'] !== 'stale') fail('proxy stale after backend down');
+    if (got.status !== 503) fail('proxy expired cache after backend down');
+    if (got.body.includes('{"stale":true}')) fail('must not replay expired cache body');
     cache.clear();
     got = await request(port, 'GET', '/v1/statistic');
     if (got.status !== 503) fail('proxy 503 after backend down');
@@ -520,9 +454,9 @@ async function main() {
       hang.listen(bPort, '127.0.0.1', resolve);
       hang.on('error', reject);
     });
-    await refreshQuoteBook();
     got = await request(port, 'GET', '/v1/coin');
-    if (got.status !== 503 && got.headers['x-front-api'] !== 'stale') fail('proxy hang timeout');
+    if (got.status !== 503) fail('proxy hang timeout');
+    await refreshSwagger();
     for (const c of heldHang) c.destroy();
     await close(hang);
 
@@ -538,63 +472,6 @@ async function main() {
   } finally {
     await close(server);
   }
-
-  const emptyBook = http.createServer(jsonHandler({ '/v1/asset': [], '/v1/fiat': [{ id: 10, name: 'CHF' }] }));
-  const emptyPort = await listen(emptyBook);
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '-e',
-        `process.env.BACKEND_URL=${JSON.stringify('http://127.0.0.1:' + emptyPort)};
-const s=require(${JSON.stringify(serverJs)});
-s.refreshQuoteBook().then(()=>process.exit(0));`,
-      ],
-      { env: childEnv() },
-    );
-    child.on('exit', () => resolve());
-    child.on('error', reject);
-    setTimeout(() => child.kill('SIGKILL'), 5000);
-  });
-  await close(emptyBook);
-
-  const noChf = http.createServer(jsonHandler({ '/v1/asset': assets, '/v1/fiat': [{ id: 11, name: 'EUR' }] }));
-  const noChfPort = await listen(noChf);
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '-e',
-        `process.env.BACKEND_URL=${JSON.stringify('http://127.0.0.1:' + noChfPort)};
-const s=require(${JSON.stringify(serverJs)});
-s.refreshQuoteBook().then(()=>process.exit(0));`,
-      ],
-      { env: childEnv() },
-    );
-    child.on('exit', () => resolve());
-    child.on('error', reject);
-    setTimeout(() => child.kill('SIGKILL'), 5000);
-  });
-  await close(noChf);
-
-  const notArr = http.createServer(jsonHandler({ '/v1/asset': { no: 'array' }, '/v1/fiat': fiats }));
-  const naPort = await listen(notArr);
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '-e',
-        `process.env.BACKEND_URL=${JSON.stringify('http://127.0.0.1:' + naPort)};
-const s=require(${JSON.stringify(serverJs)});
-s.refreshQuoteBook().then(()=>process.exit(0));`,
-      ],
-      { env: childEnv() },
-    );
-    child.on('exit', () => resolve());
-    child.on('error', reject);
-    setTimeout(() => child.kill('SIGKILL'), 5000);
-  });
-  await close(notArr);
 
   const badJson = http.createServer((req, res) => {
     res.end('not-json');
@@ -635,71 +512,6 @@ s.refreshSwagger().then(()=>process.exit(0));`,
     setTimeout(() => child.kill('SIGKILL'), 5000);
   });
   await close(noPaths);
-
-  const quoteErr = http.createServer((req, res) => {
-    const p = (req.url || '/').split('?')[0];
-    if (p === '/v1/asset') {
-      res.end(JSON.stringify(assets));
-      return;
-    }
-    if (p === '/v1/fiat') {
-      res.end(JSON.stringify(fiats));
-      return;
-    }
-    req.destroy();
-  });
-  const qePort = await listen(quoteErr);
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '-e',
-        `process.env.BACKEND_URL=${JSON.stringify('http://127.0.0.1:' + qePort)};
-const s=require(${JSON.stringify(serverJs)});
-s.refreshQuoteBook().then(()=>process.exit(0));`,
-      ],
-      { env: childEnv() },
-    );
-    child.on('exit', () => resolve());
-    child.on('error', reject);
-    setTimeout(() => child.kill('SIGKILL'), 8000);
-  });
-  await close(quoteErr);
-
-  const noUnique = http.createServer(
-    jsonHandler({
-      '/v1/asset': [{ id: 1, name: 'A', buyable: true, sellable: true }],
-      '/v1/fiat': [{ id: 10, name: 'CHF' }],
-      '/v1/buy/quote': quote,
-      '/v1/sell/quote': quote,
-      '/v1/swap/quote': { rate: 2 },
-      '/v1/realunit/quote/price': ram,
-      '/v1/realunit/quote/buyPrice': ram,
-      '/v1/realunit/quote/buyShares': ram,
-      '/v1/realunit/quote/info': ram,
-      '/v1/realunit/brokerbot/buyPrice': ram,
-      '/v1/realunit/brokerbot/buyShares': ram,
-      '/v1/realunit/brokerbot/info': ram,
-      '/v1/realunit/brokerbot/price': ram,
-    }),
-  );
-  const nuPort = await listen(noUnique);
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '-e',
-        `process.env.BACKEND_URL=${JSON.stringify('http://127.0.0.1:' + nuPort)};
-const s=require(${JSON.stringify(serverJs)});
-s.refreshQuoteBook().then(()=>process.exit(0));`,
-      ],
-      { env: childEnv() },
-    );
-    child.on('exit', () => resolve());
-    child.on('error', reject);
-    setTimeout(() => child.kill('SIGKILL'), 8000);
-  });
-  await close(noUnique);
 
   await close(backend);
 
@@ -783,14 +595,12 @@ process.exit(0);`,
   await new Promise((resolve, reject) => {
     server.once('listening', resolve);
     server.once('error', reject);
-    process.env.QUOTE_BOOK_REFRESH = '';
     boot();
   });
   await close(server);
   await new Promise((resolve, reject) => {
     server.once('listening', resolve);
     server.once('error', reject);
-    process.env.QUOTE_BOOK_REFRESH = '1';
     setPool({ query: async () => ({ rows: [] }) });
     boot();
   });
@@ -798,7 +608,7 @@ process.exit(0);`,
 
   const listenOff = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverJs], {
-      env: childEnv({ BACKEND_URL: 'http://127.0.0.1:9', PORT: '0', BIND: '127.0.0.1', QUOTE_BOOK_REFRESH: '' }),
+      env: childEnv({ BACKEND_URL: 'http://127.0.0.1:9', PORT: '0', BIND: '127.0.0.1' }),
     });
     let out = '';
     const done = () => {
@@ -807,7 +617,7 @@ process.exit(0);`,
     };
     child.stdout.on('data', (d) => {
       out += d;
-      if (out.indexOf('quote book refresh disabled') >= 0) done();
+      if (out.indexOf('listening') >= 0) done();
     });
     child.stderr.on('data', (d) => {
       out += d;
@@ -818,7 +628,7 @@ process.exit(0);`,
       resolve(out);
     }, 4000);
   });
-  if (listenOff.indexOf('quote book refresh disabled') < 0) fail('listen off: ' + listenOff);
+  if (listenOff.indexOf('listening') < 0) fail('listen off: ' + listenOff);
 
   const listenOn = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverJs], {
@@ -826,7 +636,6 @@ process.exit(0);`,
         BACKEND_URL: 'http://127.0.0.1:9',
         PORT: '0',
         BIND: '127.0.0.1',
-        QUOTE_BOOK_REFRESH: '1',
         SQL_HOST: '127.0.0.1',
         SQL_PORT: '5432',
         SQL_DB: 'db',
