@@ -126,8 +126,8 @@ When applicable, every pull request must include:
    default branch. An `unidentified` row is catalog-complete for CI and is
    **not** a grant to change that path. Private repositories are not named.
 5. **A note in the PR body** when the outward behaviour of this layer changes
-   (cache, 503 bodies, `x-front-api`, which paths are answered here versus
-   proxied, quote source). Do not name private repositories. Public consumer
+   (cache, 503 bodies, `x-front-api`, which paths are answered here, quote
+   source). Do not name private repositories. Public consumer
    paths belong in `offered-routes.json`.
 
 Missing any applicable item = changes requested.
@@ -150,23 +150,26 @@ Missing any applicable item = changes requested.
 
 ## This process
 
-- This process answers a **fixed** set of routes itself. Every other request is
-  forwarded to `BACKEND_URL` without this repository listing those routes.
+- This process answers a **fixed** set of routes itself from local state
+  (version, swagger snapshot, fresh GET cache, optional Postgres). It is
+  **forbidden** to forward a client request to `BACKEND_URL`. A live wait on
+  the backend cannot guarantee 100ms. Uncached or unknown requests return
+  `503` `not served` immediately.
+- The backend is contacted only **off the request path** (swagger snapshot
+  and GET-cache refresh). Quotes are not served here. WebSocket upgrades
+  are refused immediately (`socket.destroy()`), never tunnelled.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
 - Authenticated requests are never answered from the GET cache.
-- Quotes are reverse-proxied to `BACKEND_URL`. This process does not keep a quote book.
-- A down backend always returns 503. Never serve an expired cache body.
+- Never serve an expired cache body.
 - Every HTTP response from this process must complete within **100ms**. That
   bound is technical and always enforced, not a target. The process must cut
   the request so the client never waits longer (`503` `response deadline
   exceeded`) and must emit an `ERROR` log. It is **forbidden** to add code
-  that cannot finish in that budget: unbounded awaits, blocking work, uncapped
-  outbound waits, sleeps, or any other path that would let a ping exceed
-  100ms. The client-facing deadline is always 100ms, including the WebSocket
-  upgrade handshake until a completed `101`. A WebSocket after that handshake
-  is no longer an HTTP response. `REQUEST_TIMEOUT_MS` may only lower the
-  outbound wait to the backend, never raise it above 100ms.
+  that cannot finish in that budget: forwarding to the backend, unbounded
+  awaits, blocking work, uncapped outbound waits, sleeps, or any other path
+  that would let a ping exceed 100ms. `REQUEST_TIMEOUT_MS` may only lower
+  background outbound waits, never raise them above 100ms.
 - Do not expose internals in responses (SQL credentials, backend hosts, or
   other secrets).
 
@@ -198,10 +201,10 @@ There is no production JavaScript in this repository that may ship below 100%
 coverage. The coverage gate is the CI job, not a review courtesy.
 
 There is no HTTP response this process may take longer than 100ms to finish.
-`test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline, the
-upgrade-handshake budget, the `ERROR` log, and the outbound cap; the Node
-suite rejects any helper round-trip over 100ms. A miss is a red `test` job,
-not a review note.
+`test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline, that
+client requests are not forwarded, the `ERROR` log, and the outbound cap; the
+Node suite rejects any helper round-trip over 100ms. A miss is a red `test`
+job, not a review note.
 
 Every path this process answers itself also needs **frontend E2E** coverage:
 a real UI flow that hits that function, listed in `offered-routes.json`.

@@ -5,8 +5,8 @@
 # Arms:
 #   local one-command start (stub + process)          local_start
 #   swagger snapshot empty → 503 local body          swagger_empty
-#   PUT /v1/buy/quote → 503 backend unavailable      quote_proxy
-#   mock records forwarded method/path/body          quote_forward
+#   PUT /v1/buy/quote → 503 not served               quote_proxy
+#   quotes must not be forwarded to the backend      quote_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout → callback + destroy        proxy_timeout
@@ -73,16 +73,26 @@ grep -Fq 'if (!Number.isFinite(n) || n <= 0)' "$server_js" || fail "max_response
 grep -q 'connectionTimeoutMillis: 90' "$server_js" || fail "max_response_100: pool acquire must not outlive the deadline"
 grep -Fq 'orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)' "$server_js" || fail "REQUEST_TIMEOUT_MS default cap"
 grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing"
-grep -q 'attachUpgradeBudget(req, socket, up)' "$server_js" || fail "max_response_100: upgrade handshake budget missing"
 grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
-grep -q 'isUpgradeHandshakeComplete' "$server_js" || fail "max_response_100: upgrade must settle only on a completed 101"
-grep -Fq "up.removeListener('data', onData)" "$server_js" || fail "max_response_100: handshake listener must not outlive the HTTP upgrade"
 grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
 grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
 grep -Fq 'if (!canWrite(res)) return;' "$server_js" || fail "max_response_100: writers must refuse after the deadline"
 grep -Fq 'if (!res.destroyed) req.destroy();' "$server_js" || fail "max_response_100: deadline must cut an unfinished drain"
 grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 503 must close the connection"
-grep -Fq "res.on('finish', () => p.destroy())" "$server_js" || fail "max_response_100: proxy must drop outbound when the response finishes"
+if grep -q 'function proxy' "$server_js"; then
+  fail "no_proxy: client requests must not be forwarded"
+fi
+if grep -q 'req.pipe' "$server_js"; then
+  fail "no_proxy: must not pipe the client request outbound"
+fi
+grep -q 'function rejectUnserved' "$server_js" || fail "no_proxy: uncached requests must 503 not served"
+grep -q 'refreshCache' "$server_js" || fail "no_proxy: GET cache must fill off the request path"
+grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "no_proxy: background refresh must include GET /"
+grep -q 'function cacheRefreshPaths' "$server_js" || fail "no_proxy: refresh set must include concrete swagger GET paths"
+grep -Fq "p.indexOf('{') >= 0" "$server_js" || fail "no_proxy: parameterized swagger paths must not be fetched"
+grep -Fq "req.method !== 'GET'" "$server_js" || fail "no_proxy: GET cache must not treat HEAD as cacheable"
+grep -Fq "forbidden** to forward" "$repo_root/CONTRIBUTING.md" || fail "no_proxy: CONTRIBUTING must forbid forwarding a client request"
+grep -q 'socket.destroy()' "$server_js" || fail "no_proxy: upgrades must not be tunnelled"
 grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms"
 grep -q 'ERROR' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must require an ERROR log on a deadline miss"
 grep -q 'FRONT_API_EXIT_AFTER_BOOT=1' "$repo_root/test/run-main-coverage.sh" || fail "coverage_100: require.main collection missing"

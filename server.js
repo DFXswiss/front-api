@@ -1,7 +1,6 @@
 'use strict';
 
 const http = require('http');
-const net = require('net');
 const { URL } = require('url');
 
 function orFallback(value, fallback) {
@@ -32,7 +31,7 @@ const REQUEST_TIMEOUT_MS = outboundTimeoutMs(orFallback(process.env.REQUEST_TIME
 const STARTED = new Date().toISOString();
 
 // Public GET prefixes this layer may answer from cache. Authenticated
-// requests are never cached — they always go to the backend.
+// requests are never cached.
 const CACHE_PREFIXES = [
   '/v1/asset',
   '/v1/fiat',
@@ -77,11 +76,11 @@ try {
 }
 
 function cacheKey(req) {
-  return req.method + ' ' + req.url;
+  return req.method + ' ' + (req.url || '/').split('?')[0];
 }
 
 function isCacheable(req) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  if (req.method !== 'GET') return false;
   if (req.headers.authorization) return false;
   const path = (req.url || '/').split('?')[0];
   if (path === '/' || path === '/version' || path === '/swagger' || path === '/swagger-json') return true;
@@ -116,12 +115,6 @@ function logDeadlineError(req) {
   console.error('ERROR response exceeded ' + MAX_RESPONSE_MS + 'ms', req.method, req.url);
 }
 
-function isUpgradeHandshakeComplete(headerBlock) {
-  if (headerBlock.indexOf('\r\n\r\n') < 0) return false;
-  const statusLine = headerBlock.slice(0, headerBlock.indexOf('\r\n'));
-  return statusLine.split(' ')[1] === '101';
-}
-
 function attachResponseBudget(req, res, budgetMs) {
   const asked = budgetMs === undefined ? MAX_RESPONSE_MS : budgetMs;
   const limit = Math.min(MAX_RESPONSE_MS, asked);
@@ -153,46 +146,6 @@ function attachResponseBudget(req, res, budgetMs) {
   hard.unref();
   res.on('finish', finish);
   res.on('close', finish);
-  return true;
-}
-
-function attachUpgradeBudget(req, socket, up, budgetMs) {
-  if (socket.destroyed) {
-    if (!up.destroyed) up.destroy();
-    return true;
-  }
-  const asked = budgetMs === undefined ? MAX_RESPONSE_MS : budgetMs;
-  const limit = Math.min(MAX_RESPONSE_MS, asked);
-  const fireAt = Math.max(1, limit - 10);
-  let settled = false;
-  let header = '';
-  const finish = () => {
-    if (settled) return;
-    settled = true;
-    up.removeListener('data', onData);
-    header = '';
-  };
-  const onData = (chunk) => {
-    header += chunk.toString('latin1');
-    if (isUpgradeHandshakeComplete(header)) finish();
-  };
-  const timer = setTimeout(() => {
-    if (settled) return;
-    logDeadlineError(req);
-    if (!up.destroyed) up.destroy();
-    if (!socket.destroyed) socket.destroy();
-    finish();
-  }, fireAt);
-  timer.unref();
-  up.on('data', onData);
-  socket.once('close', () => {
-    if (!up.destroyed) up.destroy();
-    finish();
-  });
-  up.once('close', () => {
-    if (!socket.destroyed) socket.destroy();
-    finish();
-  });
   return true;
 }
 
@@ -308,7 +261,7 @@ function sendJson(res, status, body, via, extraHeaders) {
     'x-content-type-options': 'nosniff',
     'x-front-api': via,
     'access-control-allow-origin': '*',
-  }, extraHeaders || {}));
+  }, extraHeaders ?? {}));
   res.end(buf);
 }
 
@@ -395,47 +348,39 @@ async function tryDbRead(path) {
   return Buffer.from(JSON.stringify(spec.map(result.rows)));
 }
 
-function proxy(req, res) {
-  if (!canWrite(res)) return;
-  const target = new URL(BACKEND);
-  const opts = {
-    hostname: target.hostname,
-    port: backendPortFor(target),
-    path: req.url,
-    method: req.method,
-    headers: { ...req.headers, host: target.host },
-  };
-  const p = http.request(opts, (up) => {
-    const chunks = [];
-    up.on('data', (c) => chunks.push(c));
-    up.on('end', () => {
-      if (!canWrite(res)) return;
-      const body = Buffer.concat(chunks);
-      const headers = { ...up.headers };
-      delete headers['transfer-encoding'];
-      if (isCacheable(req) && up.statusCode === 200) {
-        putCache(cacheKey(req), up.statusCode, headers, body);
-        headers['x-front-api'] = 'miss';
-      }
-      res.writeHead(up.statusCode, headers);
-      res.end(body);
-    });
+function rejectUnserved(res) {
+  sendJson(res, 503, { statusCode: 503, message: 'not served', retryAfter: 1 }, 'local', {
+    connection: 'close',
+    'retry-after': '1',
   });
-  p.on('error', (err) => {
-    console.error('proxy error', err.message);
-    if (!canWrite(res)) return;
-    res.writeHead(503, {
-      'content-type': 'application/json',
-      'retry-after': '30',
-      'access-control-allow-origin': '*',
-    });
-    res.end(JSON.stringify({ statusCode: 503, message: 'backend-api unavailable', retryAfter: 30 }));
-  });
-  attachRequestTimeout(p, REQUEST_TIMEOUT_MS, () => {
-    p.destroy();
-  });
-  res.on('finish', () => p.destroy());
-  req.pipe(p);
+}
+
+function cacheRefreshPaths() {
+  const out = new Set(['/', ...CACHE_PREFIXES]);
+  const spec = swaggerSpec;
+  if (!spec || !spec.paths) return [...out];
+  for (const p of Object.keys(spec.paths)) {
+    if (p.indexOf('{') >= 0) continue;
+    if (!isServedPath(p)) continue;
+    if (p === '/version' || p === '/swagger' || p === '/swagger/' || p === '/swagger-json' || p === '/swagger-json/' || p === '/swagger-ui' || p === '/swagger-ui/') continue;
+    const ops = spec.paths[p];
+    if (!ops || typeof ops !== 'object') continue;
+    if (!ops.get) continue;
+    out.add(p);
+  }
+  return [...out];
+}
+
+async function refreshCache() {
+  for (const p of cacheRefreshPaths()) {
+    try {
+      const got = await getBackendJson(p);
+      if (got.status !== 200) continue;
+      putCache('GET ' + p, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, Buffer.from(JSON.stringify(got.json)));
+    } catch (err) {
+      console.error('cache refresh', p, err.message);
+    }
+  }
 }
 
 const server = http.createServer((req, res) => {
@@ -481,7 +426,7 @@ const server = http.createServer((req, res) => {
     tryDbRead(path)
       .then((body) => {
         if (!body) {
-          proxy(req, res);
+          rejectUnserved(res);
           return;
         }
         putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
@@ -489,47 +434,24 @@ const server = http.createServer((req, res) => {
       })
       .catch((err) => {
         console.error('db-read', path, err.message);
-        proxy(req, res);
+        rejectUnserved(res);
       });
     return;
   }
 
-  proxy(req, res);
+  rejectUnserved(res);
 });
 
-server.on('upgrade', (req, socket, head) => {
-  const target = new URL(BACKEND);
-  const port = backendPortFor(target);
-  const up = net.connect(port, target.hostname, () => {
-    if (socket.destroyed) {
-      up.destroy();
-      return;
-    }
-    const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
-    const headers = { ...req.headers, host: target.host };
-    for (const [k, v] of Object.entries(headers)) {
-      if (v === undefined) continue;
-      if (Array.isArray(v)) {
-        for (const item of v) lines.push(`${k}: ${item}`);
-      } else {
-        lines.push(`${k}: ${v}`);
-      }
-    }
-    up.write(lines.join('\r\n') + '\r\n\r\n');
-    if (head && head.length) up.write(head);
-    up.pipe(socket);
-    socket.pipe(up);
-  });
-  attachUpgradeBudget(req, socket, up);
-  up.on('error', () => socket.destroy());
-  socket.on('error', () => up.destroy());
+server.on('upgrade', (_req, socket) => {
+  socket.destroy();
 });
 
 function boot() {
   server.listen(PORT, BIND, () => {
     console.log(`front-api listening on ${BIND}:${PORT}` + (pool ? ' db-read on' : ''));
-    refreshSwagger();
+    refreshSwagger().then(() => refreshCache());
     setInterval(refreshSwagger, 10 * 60 * 1000).unref();
+    setInterval(refreshCache, 60 * 1000).unref();
   });
 }
 
@@ -574,6 +496,9 @@ module.exports = {
   isCacheable,
   cacheKey,
   refreshSwagger,
+  refreshCache,
+  cacheRefreshPaths,
+  rejectUnserved,
   swaggerHtml,
   countryDto,
   languageDto,
@@ -584,15 +509,12 @@ module.exports = {
   localVersion,
   sendJson,
   sendVersion,
-  proxy,
   attachRequestTimeout,
   attachResponseBudget,
-  attachUpgradeBudget,
   attachPoolGuards,
   onPoolConnect,
   canWrite,
   logDeadlineError,
-  isUpgradeHandshakeComplete,
   MAX_RESPONSE_MS,
   outboundTimeoutMs,
   setSwaggerSpec,

@@ -99,6 +99,6 @@ for (const key of seen) {
 }
 
 if (isServedPath('/v1/user')) fail('isServedPath unexpectedly true for /v1/user');
-if (catalogCovers('GET', '/v1/user')) fail('proxied /v1/user must not be in the catalog');
+if (catalogCovers('GET', '/v1/user')) fail('unserved /v1/user must not be in the catalog');
 
 console.log('ok offered-routes.json', catalog.routes.length, 'rows');

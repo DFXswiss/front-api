@@ -1,6 +1,6 @@
 # front-api
 
-Public HTTP layer in front of the DFX backend. This process answers a fixed set of routes itself (`/version`, a filtered swagger snapshot, GET cache, optional Postgres reads for country/language). Every other request is forwarded to `BACKEND_URL` without this repository listing those routes.
+Public HTTP layer in front of the DFX backend. This process answers a fixed set of routes itself (`/version`, a filtered swagger snapshot, GET cache, optional Postgres reads for country/language). It never forwards a client request to `BACKEND_URL`. Uncached or unknown requests return `503` `not served` immediately.
 
 ## Run
 
@@ -38,17 +38,18 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 
 - `GET /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`)
 - `GET /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json` — filtered swagger snapshot from the backend; empty snapshot returns 503
-- GET/HEAD cache (default 5 minutes) for `/` and the public list prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`)
+- GET cache (default 5 minutes) for `/` and the public list prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested concrete swagger GET paths under those prefixes are filled in the background too. Parameterized paths and HEAD are not.
 - Optional Postgres reads for `GET /v1/country` and `GET /v1/language` when `SQL_HOST` is set
 
-Only fresh cache hits are served. After the TTL the next request fetches again. If that fetch cannot reach the backend, the response is 503 — never an expired cache body. A still-fresh cache hit is served without calling the backend.
+Only fresh cache hits are served. The cache is filled in the background, not
+during a client request. After the TTL the next request is `503` `not served`
+until a background refresh succeeds — never an expired cache body, never a
+live backend wait. WebSocket upgrades are refused (`socket.destroy()`).
 
-Everything else, including quotes, is reverse-proxied to `BACKEND_URL`. WebSocket upgrades are tunnelled the same way.
-
-Every HTTP response must finish within 100ms, including the WebSocket
-upgrade handshake. A slower response is a hard bug: the process answers
-`503` `response deadline exceeded` (or cuts the upgrade socket), emits an
-`ERROR` log, and CI fails. Code that cannot meet that bound is forbidden.
+Every HTTP response must finish within 100ms. Forwarding a client request to
+the backend is forbidden because that cannot guarantee 100ms. A slower
+response is a hard bug: the process answers `503` `response deadline
+exceeded`, emits an `ERROR` log, and CI fails.
 
 ## Images
 

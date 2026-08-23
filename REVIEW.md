@@ -119,7 +119,8 @@ function unless the reviewer grants that in writing.
 
 Every HTTP response from this process must finish within 100ms. Fail if
 `MAX_RESPONSE_MS` is not 100, if `REQUEST_TIMEOUT_MS` can exceed 100, if
-the inbound budget is missing, if the upgrade handshake has no deadline,
-if a deadline miss does not emit an `ERROR` log, if the change adds a
-path that cannot finish in 100ms, or if a test round-trip is allowed to
-take longer. A slower ping is a hard bug, not a performance note.
+the inbound budget is missing, if a client request is forwarded to the
+backend, if a deadline miss does not emit an `ERROR` log, if the change
+adds a path that cannot finish in 100ms, or if a test round-trip is
+allowed to take longer. Forwarding is a hard fail: it cannot guarantee
+100ms. A slower ping is a hard bug, not a performance note.
