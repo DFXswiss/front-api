@@ -503,6 +503,10 @@ const server = http.createServer((req, res) => {
 });
 
 server.on('upgrade', (req, socket, head) => {
+  if (isKnownLocalRequest(req)) {
+    if (!socket.destroyed) socket.destroy();
+    return;
+  }
   const target = new URL(BACKEND);
   const port = backendPortFor(target);
   const up = net.connect(port, target.hostname, () => {

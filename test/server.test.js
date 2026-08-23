@@ -607,6 +607,18 @@ async function main() {
       hanging.on('error', reject);
     });
 
+    const listedUp = new net.Socket();
+    const listedUpConnects = seen.length;
+    server.emit(
+      'upgrade',
+      { method: 'GET', url: '/v1/asset', httpVersion: '1.1', headers: {} },
+      listedUp,
+      Buffer.alloc(0),
+    );
+    await sleep(40);
+    if (!listedUp.destroyed) fail('listed upgrade must close locally');
+    if (seen.length !== listedUpConnects) fail('listed upgrade must not reach the backend');
+
     const upClient = new net.Socket();
     server.emit(
       'upgrade',

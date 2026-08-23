@@ -81,6 +81,9 @@ if ! grep -q 'function proxy' "$server_js"; then
 fi
 grep -q 'req.pipe' "$server_js" || fail "unknown_forward: must pipe unknown requests outbound"
 grep -q 'net.connect' "$server_js" || fail "unknown_forward: upgrades must be tunnelled"
+if ! awk '/server.on\('\''upgrade'\''/,/^}\);$/' "$server_js" | grep -q 'isKnownLocalRequest'; then
+  fail "known_local: listed upgrades must not be tunnelled"
+fi
 grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
 grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
 grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
