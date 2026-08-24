@@ -104,6 +104,8 @@ grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fall
 grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
 grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"
 grep -Fq "no** 100ms" "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must say forwarded requests have no 100ms rule"
+grep -Fq 'belong to the upstream HTTP backend' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: forwarded unlisted routes belong to the upstream backend"
+grep -Fq 'not** an endpoint of this process' "$repo_root/README.md" || fail "unknown_forward: README must say unlisted routes are not this process"
 grep -Fq 'never forwarded' "$repo_root/README.md" || fail "known_local: README must say listed routes are never forwarded"
 grep -Fq 'must **never wait** on `BACKEND_URL`' "$repo_root/CONTRIBUTING.md" || fail "known_local: listed requests must never wait on BACKEND_URL"
 grep -Fq 'Forwarding a listed route is a hard fail' "$repo_root/REVIEW.md" || fail "known_local: REVIEW must fail listed forwarding"

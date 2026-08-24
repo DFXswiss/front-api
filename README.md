@@ -1,6 +1,6 @@
 # front-api
 
-Public HTTP layer in front of the DFX backend. Listed routes (`GET`/`HEAD /` 302 to swagger, `/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded.
+Public HTTP layer in front of the DFX backend. Listed routes (`GET`/`HEAD /` 302 to swagger, `/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.
 
 ## Run
 
@@ -49,7 +49,8 @@ is `503` `not served` until a background refresh succeeds — never an
 expired cache body, never a live backend wait on that request.
 
 Everything this process does not list is forwarded to `BACKEND_URL` with
-no 100ms rule. This repository does not name those routes.
+no 100ms rule. Those routes belong to the upstream HTTP backend, not to
+this process. This repository does not name them.
 
 Every **known** HTTP response must finish within 100ms. Forwarding a known
 route is forbidden because that cannot guarantee 100ms. A slower known
