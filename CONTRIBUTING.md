@@ -158,7 +158,8 @@ Missing any applicable item = changes requested.
 - A listed client request must **never wait** on `BACKEND_URL`. A cache miss,
   empty swagger snapshot, or missing database row is `503` `not served`
   immediately. Background refresh may ping `BACKEND_URL` off the request path
-  and must not delay the response.
+  and must not delay the response. GET/HEAD `/` is local `302` `Location: swagger`
+  and is not a JSON cache root.
 - Listed GET/HEAD paths are exact `/`, `/version`, the swagger aliases, and
   `CACHE_PREFIXES` as prefixes (`path === p || path.startsWith(p + '/')`).
   Nested paths under a listed prefix are listed.

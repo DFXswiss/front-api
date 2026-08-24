@@ -85,6 +85,7 @@ function isCacheable(req) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (req.headers.authorization) return false;
   const path = (req.url ?? '/').split('?')[0];
+  if (path === '/') return false;
   return isServedPath(path);
 }
 
@@ -408,10 +409,10 @@ function proxy(req, res) {
 }
 
 function cacheRefreshPaths() {
-  const roots = ['/', ...CACHE_PREFIXES];
+  const roots = [...CACHE_PREFIXES];
   const paths = swaggerSpec?.paths;
   if (!paths) return roots;
-  return [...new Set([...roots, ...Object.keys(paths).filter((path) => isServedPath(path))])];
+  return [...new Set([...roots, ...Object.keys(paths).filter((path) => isServedPath(path) && path !== '/')])];
 }
 
 async function refreshCache() {
@@ -435,6 +436,17 @@ const server = http.createServer((req, res) => {
   const path = (req.url ?? '/').split('?')[0];
   if (path === '/version') {
     sendVersion(req, res, localVersion(), 'local');
+    return;
+  }
+
+  if (path === '/') {
+    if (!canWrite(res)) return;
+    res.writeHead(302, {
+      location: 'swagger',
+      'x-front-api': 'local',
+      'access-control-allow-origin': '*',
+    });
+    res.end();
     return;
   }
 

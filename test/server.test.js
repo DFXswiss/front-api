@@ -292,7 +292,9 @@ async function main() {
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
   if (!isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
-  if (!isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD root');
+  if (isCacheable({ method: 'GET', url: '/', headers: {} })) fail('GET / is not JSON cache');
+  if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('HEAD / is not JSON cache');
+  if (isCacheable({ method: 'GET', url: undefined, headers: {} })) fail('undefined url GET / not cacheable');
   if (!isCacheable({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('cache HEAD asset');
   if (!isCacheable({ method: 'GET', url: '/version', headers: {} })) fail('cache version');
   if (!isCacheable({ method: 'GET', url: '/swagger', headers: {} })) fail('cache swagger');
@@ -376,6 +378,7 @@ async function main() {
   setSwaggerSpec(null);
   const rootOnlyRefreshPaths = cacheRefreshPaths();
   if (rootOnlyRefreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths null snapshot must use roots only');
+  if (rootOnlyRefreshPaths.includes('/')) fail('cacheRefreshPaths null snapshot must not include GET /');
   await refreshSwagger();
   if (!isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('nested swagger GET is cacheable');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('infoBanner is listed');
@@ -386,7 +389,8 @@ async function main() {
     fail('refreshSwagger must keep listed nested paths and templates');
   }
   const refreshPaths = cacheRefreshPaths();
-  if (!refreshPaths.includes('/') || !refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
+  if (refreshPaths.includes('/')) fail('cacheRefreshPaths must not include GET /');
+  if (!refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
   if (!refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
   if (!refreshPaths.includes('/version')) fail('cacheRefreshPaths listed swagger path');
 
@@ -403,6 +407,7 @@ async function main() {
       return r;
     };
     server.emit('request', mkReq('/swagger'), blocked);
+    server.emit('request', mkReq('/'), blocked);
     putCache('GET /v1/asset', 200, { 'content-type': 'application/json' }, Buffer.from('[]'));
     server.emit('request', mkReq('/v1/asset'), blocked);
     rejectUnserved(blocked);
@@ -662,11 +667,18 @@ async function main() {
     await refreshSwagger();
     await refreshCache();
     if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
-    if (!getCached('GET /')) fail('refreshCache must fill GET /');
+    if (getCached('GET /')) fail('refreshCache must not fill GET /');
     if (!getCached('GET /v1/setting/infoBanner')) fail('refreshCache must fill listed nested swagger GET');
     if (getCached('GET /v1/other')) fail('refreshCache must not fill a path outside the allowlist');
     got = await request(port, 'GET', '/');
-    if (got.status !== 200 || got.body.indexOf('root') < 0) fail('GET / from background cache');
+    if (got.status !== 302) fail('GET / must 302');
+    if (got.headers.location !== 'swagger') fail('GET / Location swagger');
+    if (got.headers['x-front-api'] !== 'local') fail('GET / x-front-api local');
+    if (got.body.indexOf('not served') >= 0) fail('GET / must not be not served');
+    got = await request(port, 'HEAD', '/', undefined, undefined, 0);
+    if (got.status !== 302) fail('HEAD / must 302');
+    if (got.headers.location !== 'swagger') fail('HEAD / Location swagger');
+    if (got.body) fail('HEAD / must have empty body');
     got = await request(port, 'GET', '/v1/setting/infoBanner');
     if (got.status !== 200 || got.body.indexOf('banner') < 0 || got.headers['x-front-api'] !== 'hit') {
       fail('nested swagger GET must use background cache');

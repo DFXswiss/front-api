@@ -1,6 +1,6 @@
 # front-api
 
-Public HTTP layer in front of the DFX backend. Listed routes (`/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded.
+Public HTTP layer in front of the DFX backend. Listed routes (`GET`/`HEAD /` 302 to swagger, `/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded.
 
 ## Run
 
@@ -36,9 +36,10 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 
 ## Local answers
 
+- `GET`/`HEAD /` — answered locally with 302 `Location: swagger`; HEAD has an empty body
 - `GET`/`HEAD /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`); HEAD has an empty body
 - `GET`/`HEAD /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json`, `/swagger-json/` — filtered swagger snapshot from the upstream HTTP backend; an empty snapshot returns 503 locally
-- GET/HEAD cache (default 5 minutes) for `/` and the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths under these prefixes are listed. HEAD follows the same local rules as GET and has an empty body.
+- GET/HEAD cache (default 5 minutes) for the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths under these prefixes are listed. HEAD follows the same local rules as GET and has an empty body.
 - Optional Postgres reads for `GET`/`HEAD /v1/country` and `GET`/`HEAD /v1/language` when `SQL_HOST` is set
 - An authenticated listed GET/HEAD never reads the unauthenticated GET cache. Without another local source it returns `503` `not served`; it is never forwarded.
 

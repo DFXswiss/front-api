@@ -117,8 +117,9 @@ function unless the reviewer grants that in writing.
 
 ## 12. Known routes: 100ms. Unknown routes: forwarded
 
-This process knows a fixed listed set of local GET/HEAD routes (version,
-swagger snapshot, fresh GET/HEAD cache, optional Postgres). Every **known**
+This process knows a fixed listed set of local GET/HEAD routes (GET/HEAD `/`
+302 to swagger, version, swagger snapshot, fresh GET/HEAD cache, optional
+Postgres). Every **known**
 HTTP response must finish within 100ms. Fail if `MAX_RESPONSE_MS` is not 100,
 if `REQUEST_TIMEOUT_MS` can exceed 100 for background refresh, if the inbound
 budget is missing on a known route, if a listed route is forwarded or waits on

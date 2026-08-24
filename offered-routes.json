@@ -9,13 +9,13 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "isServedPath and isCacheable: unauthenticated GET / is answered from the GET cache after a background refresh. A miss is 503 not served — never forwarded. No dedicated public frontend call site named."
+          "note": "isServedPath: GET / is answered locally with 302 Location swagger. It is not a JSON cache root and is never forwarded. No dedicated public frontend call site named."
         }
       ],
       "e2e": [
         {
           "unidentified": true,
-          "note": "No frontend E2E named that asserts GET / of this process. Required before changing this path."
+          "note": "No frontend E2E named that asserts GET / of this process. This process answers GET / with 302 to swagger from local state."
         }
       ]
     },
