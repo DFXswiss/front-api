@@ -169,10 +169,11 @@ Missing any applicable item = changes requested.
 - HEAD on a listed path is listed. It follows the same local body rules as GET
   and sends an empty response body.
 - Unlisted requests (everything for which `isKnownLocalRequest` is false)
-  remain forwarded. Forwarded requests have **no** 100ms rule. Unknown
-  routes are **never named** in this repository: they are only the
-  complement of the listed allowlist. Do not attach the 100ms budget to the
-  forward path.
+  are forwarded to `BACKEND_URL`. Those routes are **not** endpoints of this process; they belong to the upstream HTTP backend.
+  Forwarding an unknown route does not make it a listed route. Unknown routes are **never named**
+  in this repository: they are only the complement of the listed allowlist.
+  Forwarded requests have **no** 100ms rule. Do not attach the 100ms budget
+  to the forward path.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
 - Never serve an expired cache body.
@@ -222,7 +223,8 @@ are forwarded and are not in that budget. Nested listed prefixes, HEAD on
 listed paths, and authenticated listed GETs are listed, not unknown.
 `test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline on
 known routes, that known routes are not forwarded, that unknown routes are
-forwarded, the `ERROR` log, and the background outbound cap. The Node suite
+forwarded and belong to the upstream HTTP backend, the `ERROR` log, and the
+background outbound cap. The Node suite
 rejects any **known-route** helper round-trip over 100ms. A miss is a red
 `test` job, not a review note.
 

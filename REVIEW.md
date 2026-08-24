@@ -132,9 +132,10 @@ Fail if the catalog says `prefix` or `exact` but the code forwards a matching
 nested GET/HEAD request or an authenticated listed GET. Listed authenticated
 GETs must not read the unauthenticated GET cache.
 
-Unknown routes (everything this process does not answer itself) **must**
-be forwarded to `BACKEND_URL`. They have no 100ms rule. This repository
-never names them. Fail if an unknown request is answered with `503`
-`not served` instead of being forwarded, if the 100ms budget is attached
-to the forward path, or if the diff names a route outside the known
-allowlist in docs, comments, catalog notes, or PR text.
+Unknown routes (everything this process does not list) **must**
+be forwarded to `BACKEND_URL`. They are not endpoints of this process; they belong to the upstream HTTP backend.
+They have no 100ms rule. This
+repository never names them. Fail if an unknown request is answered with
+`503` `not served` instead of being forwarded, if the 100ms budget is
+attached to the forward path, or if the diff names a route outside the
+known allowlist in docs, comments, catalog notes, or PR text.
