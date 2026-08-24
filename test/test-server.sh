@@ -106,7 +106,7 @@ grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CON
 grep -Fq "no** 100ms" "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must say forwarded requests have no 100ms rule"
 grep -Fq 'Those routes are **not** endpoints of this process; they belong to the upstream HTTP backend.' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING process bullet must say those routes are not endpoints of this process"
 grep -Fq 'Forwarding an unknown route does not make it a listed route.' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING process bullet must say forwarding an unknown route does not list it"
-grep -Fq 'not** an endpoint of this process' "$repo_root/README.md" || fail "unknown_forward: README must say unlisted routes are not this process"
+grep -Fq 'Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.' "$repo_root/README.md" || fail "unknown_forward: README must say unlisted routes are not this process"
 grep -Fq 'Those routes belong to the upstream HTTP backend, not to this process.' "$repo_root/README.md" || fail "unknown_forward: README local-answers must say those routes belong to the upstream HTTP backend"
 grep -Fq 'never forwarded' "$repo_root/README.md" || fail "known_local: README must say listed routes are never forwarded"
 grep -Fq 'must **never wait** on `BACKEND_URL`' "$repo_root/CONTRIBUTING.md" || fail "known_local: listed requests must never wait on BACKEND_URL"
