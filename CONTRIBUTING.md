@@ -169,9 +169,8 @@ Missing any applicable item = changes requested.
 - HEAD on a listed path is listed. It follows the same local body rules as GET
   and sends an empty response body.
 - Unlisted requests (everything for which `isKnownLocalRequest` is false)
-  are forwarded to `BACKEND_URL`. Those routes are **not** endpoints of this
-  process; they belong to the upstream HTTP backend. Forwarding an unknown
-  route does not make it a listed route. Unknown routes are **never named**
+  are forwarded to `BACKEND_URL`. Those routes are **not** endpoints of this process; they belong to the upstream HTTP backend.
+  Forwarding an unknown route does not make it a listed route. Unknown routes are **never named**
   in this repository: they are only the complement of the listed allowlist.
   Forwarded requests have **no** 100ms rule. Do not attach the 100ms budget
   to the forward path.

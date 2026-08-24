@@ -49,8 +49,8 @@ is `503` `not served` until a background refresh succeeds — never an
 expired cache body, never a live backend wait on that request.
 
 Everything this process does not list is forwarded to `BACKEND_URL` with
-no 100ms rule. Those routes belong to the upstream HTTP backend, not to
-this process. This repository does not name them.
+no 100ms rule. Those routes belong to the upstream HTTP backend, not to this process.
+This repository does not name them.
 
 Every **known** HTTP response must finish within 100ms. Forwarding a known
 route is forbidden because that cannot guarantee 100ms. A slower known
