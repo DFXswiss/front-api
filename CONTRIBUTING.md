@@ -150,23 +150,30 @@ Missing any applicable item = changes requested.
 
 ## This process
 
-- This process answers a **fixed** set of routes itself from local state
-  (version, swagger snapshot, fresh GET cache, optional Postgres). Those
-  **known** routes must finish within **100ms**. It is **forbidden** to
-  satisfy them by waiting on `BACKEND_URL` or any other system that cannot
-  guarantee 100ms. A cache miss on a known GET is `503` `not served`
-  immediately — never a live backend fetch on that request.
-- Every other request (routes this process does **not** know) is forwarded
-  to `BACKEND_URL`. Forwarded requests have **no** 100ms rule. Unknown
+- This process answers a **fixed listed set** (`offered-routes.json`,
+  `isServedPath`). A listed route is **finished here** from local state
+  (version, swagger snapshot, fresh GET/HEAD cache, optional Postgres). It is
+  **forbidden** to document a route here and then forward that request to
+  `BACKEND_URL`.
+- A listed client request must **never wait** on `BACKEND_URL`. A cache miss,
+  empty swagger snapshot, or missing database row is `503` `not served`
+  immediately. Background refresh may ping `BACKEND_URL` off the request path
+  and must not delay the response.
+- Listed GET/HEAD paths are exact `/`, `/version`, the swagger aliases, and
+  `CACHE_PREFIXES` as prefixes (`path === p || path.startsWith(p + '/')`).
+  Nested paths under a listed prefix are listed.
+- `Authorization` does not make a listed GET unknown. Do not answer an
+  authenticated GET from the unauthenticated GET cache; when no other local
+  source exists, answer `503` `not served` — never forward.
+- HEAD on a listed path is listed. It follows the same local body rules as GET
+  and sends an empty response body.
+- Unlisted requests (everything for which `isKnownLocalRequest` is false)
+  remain forwarded. Forwarded requests have **no** 100ms rule. Unknown
   routes are **never named** in this repository: they are only the
-  complement of the known allowlist.
-- The backend is contacted on the request path only for unknown routes.
-  Swagger snapshot and GET-cache refresh stay **off** the request path and
-  exist only to serve known GETs from local state.
+  complement of the listed allowlist. Do not attach the 100ms budget to the
+  forward path.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist.
-- Authenticated requests are never answered from the GET cache. `GET /version`
-  and swagger remain local even with `Authorization`.
 - Never serve an expired cache body.
 - Every **known** HTTP response from this process must complete within
   **100ms**. That bound is technical and always enforced, not a target. The
@@ -209,7 +216,9 @@ There is no production JavaScript in this repository that may ship below 100%
 coverage. The coverage gate is the CI job, not a review courtesy.
 
 There is no **known** HTTP response this process may take longer than 100ms
-to finish. Unknown requests are forwarded and are not in that budget.
+to finish. Known/listed routes are never forwarded. Unknown/unlisted requests
+are forwarded and are not in that budget. Nested listed prefixes, HEAD on
+listed paths, and authenticated listed GETs are listed, not unknown.
 `test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline on
 known routes, that known routes are not forwarded, that unknown routes are
 forwarded, the `ERROR` log, and the background outbound cap. The Node suite

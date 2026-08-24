@@ -55,6 +55,9 @@ for (const row of catalog.routes) {
   seen.add(key);
 
   if (!isServedPath(row.path)) fail('catalog path is not served: ' + row.path);
+  if (row.match === 'prefix' && !isServedPath(row.path + '/x')) {
+    fail('catalog prefix subpath is not served: ' + row.path + '/x');
+  }
   for (const alias of row.aliases ?? []) {
     if (!isServedPath(alias)) fail('catalog alias is not served: ' + alias);
   }
@@ -86,9 +89,9 @@ for (const p of EXACT_GET_PATHS) {
   if (!exactGetNames.has(p)) fail('served GET path missing from exact catalog names: ' + p);
 }
 for (const p of CACHE_PREFIXES) {
-  const row = rowFor('GET', p, 'exact');
-  if (!row) fail('CACHE_PREFIX missing as exact row: ' + p);
-  if (catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath must not be catalogued as served: ' + p + '/x');
+  const row = rowFor('GET', p, 'prefix');
+  if (!row) fail('CACHE_PREFIX missing as prefix row: ' + p);
+  if (!catalogCovers('GET', p + '/x')) fail('CACHE_PREFIX subpath must be catalogued as served: ' + p + '/x');
 }
 
 const expectedKeys = new Set();

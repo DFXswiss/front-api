@@ -167,6 +167,7 @@ async function main() {
       '/v1/asset': { get: {} },
       '/v1/asset/x': { get: {} },
       '/v1/asset/{id}': { get: {} },
+      '/v1/setting/infoBanner': { get: {} },
       '/v1/other': { get: {} },
       '/version': { get: {} },
       '/v1/bank': { post: {} },
@@ -182,6 +183,7 @@ async function main() {
       '/swagger-json': swagger,
       '/v1/statistic': { ok: 1 },
       '/v1/setting': { ok: 1 },
+      '/v1/setting/infoBanner': { banner: 1 },
       '/v1/bank': { ok: 1 },
       '/v1/app': (req, res) => {
         res.writeHead(500, { 'content-type': 'application/json' });
@@ -273,18 +275,25 @@ async function main() {
   if (!isServedPath('/swagger-ui') || !isServedPath('/swagger-ui/')) fail('isServedPath ui');
   if (isServedPath('/v1/other')) fail('isServedPath outside allowlist');
   if (!isServedPath('/v1/asset') || !isServedPath(undefined)) fail('isServedPath');
+  if (!isServedPath('/v1/asset/1')) fail('isServedPath nested asset');
+  if (!isServedPath('/v1/setting/infoBanner')) fail('isServedPath nested setting');
+  if (!isServedPath('/v1/asset/{id}')) fail('isServedPath template');
+  if (isServedPath('/v1/assetfoo')) fail('isServedPath prefix boundary');
+  if (isServedPath('/v1/other')) fail('isServedPath outside listed prefixes');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');
   if (!isKnownLocalRequest({ method: 'GET', url: '/version', headers: {} })) fail('known version');
   if (isKnownLocalRequest({ method: 'PUT', url: '/v1/other', headers: {} })) fail('unknown method');
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('unknown path');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('auth GET is not a cache hit path');
-  if (isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('non-GET is not known local');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/x', headers: {} })) fail('non-exact list path is not known local');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('known auth GET');
+  if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('known HEAD');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('known asset id');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('known infoBanner');
   if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
-  if (isCacheable({ method: 'GET', url: '/v1/asset/x', headers: {} })) fail('cache non-exact list path');
-  if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD');
+  if (!isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
+  if (!isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('cache HEAD root');
+  if (!isCacheable({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('cache HEAD asset');
   if (!isCacheable({ method: 'GET', url: '/version', headers: {} })) fail('cache version');
   if (!isCacheable({ method: 'GET', url: '/swagger', headers: {} })) fail('cache swagger');
   if (!isCacheable({ method: 'GET', url: '/swagger-json', headers: {} })) fail('cache swagger-json');
@@ -292,6 +301,7 @@ async function main() {
   if (isCacheable({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('cache auth');
   if (isCacheable({ method: 'GET', url: '/v1/other', headers: {} })) fail('cache outside allowlist');
   if (cacheKey({ method: 'GET', url: '/a' }) !== 'GET /a') fail('cacheKey');
+  if (cacheKey({ method: 'HEAD', url: '/v1/asset' }) !== 'GET /v1/asset') fail('cacheKey HEAD shares GET');
   if (cacheKey({ method: 'GET', url: '/v1/asset?x=1' }) !== 'GET /v1/asset') fail('cacheKey query');
   if (cacheKey({ method: 'GET', url: undefined }) !== 'GET /') fail('cacheKey empty');
 
@@ -363,19 +373,22 @@ async function main() {
   if ((await tryDbRead('/v1/country')) !== null) fail('tryDbRead null result');
   setPool(null);
 
+  setSwaggerSpec(null);
+  const rootOnlyRefreshPaths = cacheRefreshPaths();
+  if (rootOnlyRefreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths null snapshot must use roots only');
   await refreshSwagger();
-  if (isCacheable({ method: 'GET', url: '/v1/other', headers: {} })) fail('outside allowlist is unknown');
-  if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('outside allowlist is forwarded');
+  if (!isCacheable({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('nested swagger GET is cacheable');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('infoBanner is listed');
   if (!getSwaggerSpec() || !getSwaggerSpec().paths['/v1/asset'] || getSwaggerSpec().paths['/v1/other']) {
     fail('refreshSwagger allowlist');
   }
-  if (getSwaggerSpec().paths['/v1/asset/x'] || getSwaggerSpec().paths['/v1/asset/{id}']) {
-    fail('refreshSwagger must drop non-exact list paths');
+  if (!getSwaggerSpec().paths['/v1/setting/infoBanner'] || !getSwaggerSpec().paths['/v1/asset/{id}']) {
+    fail('refreshSwagger must keep listed nested paths and templates');
   }
   const refreshPaths = cacheRefreshPaths();
   if (!refreshPaths.includes('/') || !refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
-  if (refreshPaths.includes('/v1/other')) fail('cacheRefreshPaths outside allowlist');
-  if (refreshPaths.includes('/version')) fail('cacheRefreshPaths local version');
+  if (!refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
+  if (!refreshPaths.includes('/version')) fail('cacheRefreshPaths listed swagger path');
 
   const port = await listen(server);
   try {
@@ -464,16 +477,28 @@ async function main() {
     if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward put body');
     got = await request(port, 'GET', '/v1/other', undefined, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward get body');
-    got = await request(port, 'GET', '/v1/asset/x', undefined, undefined, 0);
-    if (got.body.indexOf('not served') >= 0) fail('non-exact list path must be forwarded');
+    const assetIdBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length;
+    got = await request(port, 'GET', '/v1/asset/1');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('parameterized GET must be local miss');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length !== assetIdBackendRequests) {
+      fail('parameterized GET must not be forwarded');
+    }
+    cache.delete('GET /v1/setting/infoBanner');
+    const bannerBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting/infoBanner').length;
+    got = await request(port, 'GET', '/v1/setting/infoBanner');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('nested swagger GET before fill must be local miss');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting/infoBanner').length !== bannerBackendRequests) {
+      fail('nested swagger GET before fill must not be forwarded');
+    }
 
     if (!seen.some((row) => row.method === 'PUT' && row.path === '/v1/other')) fail('unknown_forward put');
     if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/other')) fail('unknown_forward get');
-    if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/asset/x')) fail('unknown_forward non-exact list path');
 
     setSwaggerSpec(null);
     got = await request(port, 'GET', '/swagger-json');
     if (got.status !== 503) fail('swagger empty json');
+    got = await request(port, 'HEAD', '/swagger-json');
+    if (got.status !== 503 || got.body !== '' || got.headers['x-front-api'] !== 'local') fail('swagger empty HEAD');
     got = await request(port, 'GET', '/swagger');
     if (got.status !== 503) fail('swagger empty html');
     got = await request(port, 'GET', '/swagger-ui/');
@@ -481,8 +506,12 @@ async function main() {
     setSwaggerSpec({ paths: { '/v1/asset': {} }, info: { title: 'x' } });
     got = await request(port, 'GET', '/swagger-json/');
     if (got.status !== 200) fail('swagger json');
+    got = await request(port, 'HEAD', '/swagger-json');
+    if (got.status !== 200 || got.body !== '' || !(+got.headers['content-length'] > 0)) fail('swagger json HEAD');
     got = await request(port, 'GET', '/swagger/');
     if (got.status !== 200) fail('swagger html');
+    got = await request(port, 'HEAD', '/swagger');
+    if (got.status !== 200 || got.body !== '' || !(+got.headers['content-length'] > 0)) fail('swagger html HEAD');
     got = await request(port, 'GET', '/swagger-ui');
     if (got.status !== 200) fail('swagger-ui');
 
@@ -490,8 +519,12 @@ async function main() {
     if (got.status !== 200 || got.body.indexOf('front-api') < 0) fail('version json');
     got = await request(port, 'GET', '/version', undefined, { accept: 'text/html' });
     if (String(got.headers['content-type']).indexOf('text/html') < 0) fail('version html');
+    got = await request(port, 'HEAD', '/version', undefined, { accept: 'text/html' });
+    if (got.status !== 200 || got.body !== '' || !(+got.headers['content-length'] > 0)) fail('version html HEAD');
 
     cache.clear();
+    got = await request(port, 'HEAD', '/v1/asset');
+    if (got.status !== 503 || got.body !== '' || got.headers['x-front-api'] !== 'local') fail('HEAD cache miss must be local');
     got = await request(port, 'GET', '/v1/statistic');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('cache miss must not proxy');
     putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"ok":1}'));
@@ -520,6 +553,10 @@ async function main() {
     });
     got = await request(port, 'GET', '/v1/country');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'db') fail('db country');
+    cache.delete('GET /v1/country');
+    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
+    if (got.status !== 200 || got.headers['x-front-api'] !== 'db') fail('auth db country');
+    if (getCached('GET /v1/country')) fail('auth db country must not fill public cache');
     setPool({ query: async () => null });
     got = await request(port, 'GET', '/v1/language');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db null');
@@ -538,8 +575,17 @@ async function main() {
     got = await request(port, 'GET', '/v1/language');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db catch must not proxy');
     setPool(null);
-    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' }, 0);
-    if (got.body.indexOf('not served') >= 0) fail('auth GET must be forwarded');
+    const authBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/country').length;
+    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('auth GET must be local miss');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/country').length !== authBackendRequests) {
+      fail('auth GET must not be forwarded');
+    }
+    putCache('GET /v1/asset', 200, { 'content-type': 'application/json' }, Buffer.from('{"public":true}'));
+    got = await request(port, 'GET', '/v1/asset', undefined, { authorization: 'Bearer x' });
+    if (got.status !== 503 || got.headers['x-front-api'] === 'hit' || got.body.includes('public')) {
+      fail('auth GET must not read public cache');
+    }
 
     await new Promise((resolve, reject) => {
       const held = [];
@@ -560,6 +606,18 @@ async function main() {
       });
       hanging.on('error', reject);
     });
+
+    const listedUp = new net.Socket();
+    const listedUpConnects = seen.length;
+    server.emit(
+      'upgrade',
+      { method: 'GET', url: '/v1/asset', httpVersion: '1.1', headers: {} },
+      listedUp,
+      Buffer.alloc(0),
+    );
+    await sleep(40);
+    if (!listedUp.destroyed) fail('listed upgrade must close locally');
+    if (seen.length !== listedUpConnects) fail('listed upgrade must not reach the backend');
 
     const upClient = new net.Socket();
     server.emit(
@@ -605,14 +663,19 @@ async function main() {
     await refreshCache();
     if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
     if (!getCached('GET /')) fail('refreshCache must fill GET /');
+    if (!getCached('GET /v1/setting/infoBanner')) fail('refreshCache must fill listed nested swagger GET');
     if (getCached('GET /v1/other')) fail('refreshCache must not fill a path outside the allowlist');
     got = await request(port, 'GET', '/');
     if (got.status !== 200 || got.body.indexOf('root') < 0) fail('GET / from background cache');
+    got = await request(port, 'GET', '/v1/setting/infoBanner');
+    if (got.status !== 200 || got.body.indexOf('banner') < 0 || got.headers['x-front-api'] !== 'hit') {
+      fail('nested swagger GET must use background cache');
+    }
     got = await request(port, 'GET', '/v1/asset?x=1');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
-    got = await request(port, 'HEAD', '/v1/asset', undefined, undefined, 0);
-    if (got.headers['x-front-api'] === 'hit') fail('HEAD must not be a GET cache hit');
-    if (got.body.indexOf('not served') >= 0) fail('HEAD must be forwarded');
+    got = await request(port, 'HEAD', '/v1/asset');
+    if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('HEAD must share GET cache');
+    if (got.body !== '') fail('HEAD cache hit must have empty body');
     got = await request(port, 'GET', '/v1/asset');
     if (got.status !== 200 || got.body.indexOf('BTC') < 0) fail('ttl_expire: prime');
     got = await request(port, 'GET', '/v1/asset');

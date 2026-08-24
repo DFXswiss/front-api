@@ -81,6 +81,9 @@ if ! grep -q 'function proxy' "$server_js"; then
 fi
 grep -q 'req.pipe' "$server_js" || fail "unknown_forward: must pipe unknown requests outbound"
 grep -q 'net.connect' "$server_js" || fail "unknown_forward: upgrades must be tunnelled"
+if ! awk '/server.on\('\''upgrade'\''/,/^}\);$/' "$server_js" | grep -q 'isKnownLocalRequest'; then
+  fail "known_local: listed upgrades must not be tunnelled"
+fi
 grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
 grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
 grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
@@ -90,13 +93,19 @@ grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 
 grep -q 'function rejectUnserved' "$server_js" || fail "known_local: uncached known GETs must 503 not served"
 grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill off the request path"
 grep -Fq "['/', ...CACHE_PREFIXES]" "$server_js" || fail "known_local: background refresh must include GET /"
-grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set is list roots only"
-grep -Fq "req.method !== 'GET'" "$server_js" || fail "known_local: GET cache must not treat HEAD as cacheable"
-grep -Fq 'CACHE_PREFIXES.includes(path)' "$server_js" || fail "known_local: list roots are exact matches"
+grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set must include roots and listed swagger paths"
+grep -Fq "req.method !== 'GET' && req.method !== 'HEAD'" "$server_js" || fail "known_local: GET and HEAD must be listed and cacheable"
+grep -Fq "startsWith(prefix + '/')" "$server_js" || fail "known_local: CACHE_PREFIXES must list nested paths"
+if grep -Fq 'return isCacheable(req)' "$server_js"; then
+  fail "known_local: Authorization must not make a listed request unknown"
+fi
 grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
 grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
 grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"
 grep -Fq "no** 100ms" "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must say forwarded requests have no 100ms rule"
+grep -Fq 'never forwarded' "$repo_root/README.md" || fail "known_local: README must say listed routes are never forwarded"
+grep -Fq 'must **never wait** on `BACKEND_URL`' "$repo_root/CONTRIBUTING.md" || fail "known_local: listed requests must never wait on BACKEND_URL"
+grep -Fq 'Forwarding a listed route is a hard fail' "$repo_root/REVIEW.md" || fail "known_local: REVIEW must fail listed forwarding"
 grep -q 'Unknown routes' "$repo_root/REVIEW.md" || fail "unknown_forward: REVIEW must require forwarding unknown routes"
 grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms on known routes"
 grep -q 'ERROR' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must require an ERROR log on a deadline miss"
