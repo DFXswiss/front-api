@@ -93,12 +93,32 @@ function getCached(key) {
   return cache.get(key) || null;
 }
 
+function embeddedStatisticStatus(body) {
+  try {
+    const raw = Buffer.isBuffer(body) ? body.toString('utf8') : String(body);
+    const json = JSON.parse(raw);
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+    const nested = json.status;
+    if (!nested || typeof nested !== 'object' || Array.isArray(nested)) return null;
+    return nested;
+  } catch {
+    return null;
+  }
+}
+
 function putCache(key, status, headers, body) {
   if (cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }
   cache.set(key, { status, headers, body, exp: Date.now() + TTL_MS });
+  if (key !== 'GET /v1/statistic' || status !== 200) return;
+  const nested = embeddedStatisticStatus(body);
+  if (!nested) {
+    cache.delete('GET /v1/statistic/status');
+    return;
+  }
+  putCache('GET /v1/statistic/status', 200, headers, Buffer.from(JSON.stringify(nested)));
 }
 
 function localVersion() {

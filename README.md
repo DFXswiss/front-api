@@ -39,7 +39,7 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 - `GET`/`HEAD /` — answered locally with 302 `Location: swagger`; HEAD has an empty body
 - `GET`/`HEAD /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`); HEAD has an empty body
 - `GET`/`HEAD /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json`, `/swagger-json/` — filtered swagger snapshot from the upstream HTTP backend; an empty snapshot returns 503 locally
-- GET/HEAD cache (default 5 minutes) for the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths under these prefixes are listed. HEAD follows the same local rules as GET and has an empty body.
+- GET/HEAD cache (default 5 minutes) for the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths under these prefixes are listed. Nested `GET`/`HEAD /v1/statistic/status` is answered from the cached list-root `status` object. HEAD follows the same local rules as GET and has an empty body.
 - Optional Postgres reads for `GET`/`HEAD /v1/country` and `GET`/`HEAD /v1/language` when `SQL_HOST` is set
 - An authenticated listed GET/HEAD never reads the unauthenticated GET cache. Without another local source it returns `503` `not served`; it is never forwarded.
 

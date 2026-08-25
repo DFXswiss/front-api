@@ -92,6 +92,8 @@ grep -Fq 'if (!res.destroyed) req.destroy();' "$server_js" || fail "max_response
 grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 503 must close the connection"
 grep -q 'function rejectUnserved' "$server_js" || fail "known_local: uncached known GETs must 503 not served"
 grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill off the request path"
+grep -Fq "GET /v1/statistic/status" "$server_js" || fail "known_local: statistic status must fan-out from the list root"
+grep -q 'function embeddedStatisticStatus' "$server_js" || fail "known_local: statistic status fan-out helper missing"
 grep -Fq "location: 'swagger'" "$server_js" || fail "known_local: GET / must 302 to swagger"
 grep -Fq 'const roots = [...CACHE_PREFIXES];' "$server_js" || fail "known_local: background refresh must not include GET /"
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set must include roots and listed swagger paths"

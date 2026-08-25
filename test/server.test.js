@@ -181,7 +181,11 @@ async function main() {
       '/v1/fiat': fiats,
       '/': { root: 1 },
       '/swagger-json': swagger,
-      '/v1/statistic': { ok: 1 },
+      '/v1/statistic': {
+        totalVolume: { buy: 1, sell: 2 },
+        totalRewards: { staking: 0, ref: 0 },
+        status: { buy: 'ONLINE', sell: 'ONLINE' },
+      },
       '/v1/setting': { ok: 1 },
       '/v1/setting/infoBanner': { banner: 1 },
       '/v1/bank': { ok: 1 },
@@ -277,6 +281,7 @@ async function main() {
   if (!isServedPath('/v1/asset') || !isServedPath(undefined)) fail('isServedPath');
   if (!isServedPath('/v1/asset/1')) fail('isServedPath nested asset');
   if (!isServedPath('/v1/setting/infoBanner')) fail('isServedPath nested setting');
+  if (!isServedPath('/v1/statistic/status')) fail('isServedPath nested statistic status');
   if (!isServedPath('/v1/asset/{id}')) fail('isServedPath template');
   if (isServedPath('/v1/assetfoo')) fail('isServedPath prefix boundary');
   if (isServedPath('/v1/other')) fail('isServedPath outside listed prefixes');
@@ -288,6 +293,8 @@ async function main() {
   if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('known HEAD');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('known asset id');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('known infoBanner');
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/statistic/status', headers: {} })) fail('known statistic status');
+  if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/statistic/status', headers: {} })) fail('known statistic status HEAD');
   if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
@@ -349,6 +356,51 @@ async function main() {
   if (!getCached('a')) fail('getCached');
   for (let i = 0; i < CACHE_MAX + 2; i++) putCache('k' + i, 200, {}, Buffer.from(String(i)));
   if (cache.size > CACHE_MAX) fail('eviction');
+
+  cache.clear();
+  putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"ok":1}'));
+  if (getCached('GET /v1/statistic/status')) fail('statistic without status must not fan-out');
+  putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('not-json'));
+  if (getCached('GET /v1/statistic/status')) fail('invalid statistic json must not fan-out');
+  putCache('GET /v1/statistic', 200, { h: '1' }, Buffer.from('[]'));
+  if (getCached('GET /v1/statistic/status')) fail('array statistic must not fan-out');
+  putCache('GET /v1/statistic', 200, { h: '1' }, Buffer.from('null'));
+  if (getCached('GET /v1/statistic/status')) fail('null statistic must not fan-out');
+  putCache('GET /v1/statistic', 200, { h: '1' }, Buffer.from('{"status":null}'));
+  if (getCached('GET /v1/statistic/status')) fail('null status must not fan-out');
+  putCache('GET /v1/statistic', 200, { h: '1' }, Buffer.from('{"status":[]}'));
+  if (getCached('GET /v1/statistic/status')) fail('array status must not fan-out');
+  putCache('GET /v1/statistic', 200, { h: '1' }, Buffer.from('{"status":"ONLINE"}'));
+  if (getCached('GET /v1/statistic/status')) fail('string status must not fan-out');
+  putCache('GET /v1/statistic', 500, { h: '1' }, Buffer.from('{"status":{"buy":"ONLINE"}}'));
+  if (getCached('GET /v1/statistic/status')) fail('non-200 statistic must not fan-out');
+  putCache('GET /v1/asset', 200, { h: '1' }, Buffer.from('{"status":{"buy":"ONLINE"}}'));
+  if (getCached('GET /v1/statistic/status')) fail('non-statistic must not fan-out');
+  putCache('GET /v1/statistic', 200, { h: '1' }, '{"status":{"buy":"ONLINE","sell":"ONLINE"}}');
+  const fromString = getCached('GET /v1/statistic/status');
+  if (!fromString || fromString.status !== 200) fail('string statistic body must fan-out');
+  cache.delete('GET /v1/statistic/status');
+  const statusHeaders = { 'content-type': 'application/json', 'access-control-allow-origin': '*' };
+  putCache(
+    'GET /v1/statistic',
+    200,
+    statusHeaders,
+    Buffer.from(
+      JSON.stringify({
+        totalVolume: { buy: 1, sell: 2 },
+        totalRewards: { staking: 0, ref: 0 },
+        status: { buy: 'ONLINE', sell: 'ONLINE' },
+      }),
+    ),
+  );
+  const nested = getCached('GET /v1/statistic/status');
+  if (!nested || nested.status !== 200) fail('statistic status fan-out');
+  const nestedBody = Buffer.isBuffer(nested.body) ? nested.body.toString('utf8') : String(nested.body);
+  if (nestedBody.indexOf('buy":"ONLINE') < 0 || nestedBody.indexOf('sell":"ONLINE') < 0) {
+    fail('statistic status body');
+  }
+  putCache('GET /v1/statistic', 200, { h: '1' }, Buffer.from('{"ok":1}'));
+  if (getCached('GET /v1/statistic/status')) fail('replacing statistic without status must drop fan-out');
 
   const resJson = fakeRes();
   sendJson(resJson, 200, { ok: 1 }, 'local');
@@ -488,6 +540,13 @@ async function main() {
     if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length !== assetIdBackendRequests) {
       fail('parameterized GET must not be forwarded');
     }
+    const statusMissSeen = seen.filter((row) => row.method === 'GET' && row.path === '/v1/statistic/status').length;
+    cache.delete('GET /v1/statistic/status');
+    got = await request(port, 'GET', '/v1/statistic/status');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('statistic status miss must be local');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/statistic/status').length !== statusMissSeen) {
+      fail('statistic status must not be forwarded');
+    }
     cache.delete('GET /v1/setting/infoBanner');
     const bannerBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting/infoBanner').length;
     got = await request(port, 'GET', '/v1/setting/infoBanner');
@@ -535,6 +594,8 @@ async function main() {
     putCache('GET /v1/statistic', 200, { 'content-type': 'application/json' }, Buffer.from('{"ok":1}'));
     got = await request(port, 'GET', '/v1/statistic');
     if (got.headers['x-front-api'] !== 'hit') fail('cache hit');
+    got = await request(port, 'GET', '/v1/statistic/status');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('ok:1 statistic must not serve status');
 
     setPool({
       query: async () => ({
@@ -669,6 +730,7 @@ async function main() {
     if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
     if (getCached('GET /')) fail('refreshCache must not fill GET /');
     if (!getCached('GET /v1/setting/infoBanner')) fail('refreshCache must fill listed nested swagger GET');
+    if (!getCached('GET /v1/statistic/status')) fail('refreshCache must fan-out statistic status');
     if (getCached('GET /v1/other')) fail('refreshCache must not fill a path outside the allowlist');
     got = await request(port, 'GET', '/');
     if (got.status !== 302) fail('GET / must 302');
@@ -682,6 +744,15 @@ async function main() {
     got = await request(port, 'GET', '/v1/setting/infoBanner');
     if (got.status !== 200 || got.body.indexOf('banner') < 0 || got.headers['x-front-api'] !== 'hit') {
       fail('nested swagger GET must use background cache');
+    }
+    got = await request(port, 'GET', '/v1/statistic/status');
+    if (got.status !== 200 || got.body.indexOf('buy":"ONLINE') < 0 || got.body.indexOf('sell":"ONLINE') < 0) {
+      fail('statistic status from list root');
+    }
+    if (got.headers['x-front-api'] !== 'hit') fail('statistic status cache hit');
+    got = await request(port, 'HEAD', '/v1/statistic/status');
+    if (got.status !== 200 || got.body !== '' || got.headers['x-front-api'] !== 'hit') {
+      fail('HEAD statistic status must share GET cache');
     }
     got = await request(port, 'GET', '/v1/asset?x=1');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');

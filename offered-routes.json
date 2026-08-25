@@ -187,7 +187,7 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Prefix on the swagger allowlist. The root and nested paths are served from the background GET cache; a miss is 503 not served, never forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
+          "note": "Prefix on the swagger allowlist. The root is served from the background GET cache. Nested GET /v1/statistic/status is answered from that cached list-root status object (not a separate backend fetch). A miss is 503 not served, never forwarded. No named call site in DFXswiss/packages or DFXswiss/services."
         }
       ],
       "e2e": [
