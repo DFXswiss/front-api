@@ -19,7 +19,7 @@ process.env.BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:9';
 const { CACHE_PREFIXES, EXACT_GET_PATHS, isServedPath } = require('../server.js');
 
 const PUBLIC_REPOS = new Set([
-  'DFXswiss/services',
+  'DFXswiss/app',
   'DFXswiss/packages',
   'DFXswiss/dfx-wallet',
   'RealUnitCH/app',
