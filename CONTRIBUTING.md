@@ -229,7 +229,7 @@ rejects any **known-route** helper round-trip over 100ms. A miss is a red
 Every path this process answers itself also needs **frontend E2E** coverage:
 a real UI flow that hits that function, listed in `offered-routes.json`.
 Those tests usually live in the consumer repository (for example
-`DFXswiss/services` `e2e-stack/specs/buy.spec.ts`). This repository's CI
+`DFXswiss/app` `e2e-stack/specs/buy.spec.ts`). This repository's CI
 enforces the catalog, not the foreign suite. A mocked API intercept that
 never reaches this process is not E2E of this layer. Reviewers must not
 merge a change to an offered function until that E2E exists (any branch of
