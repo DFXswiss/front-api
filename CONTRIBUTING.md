@@ -1,6 +1,6 @@
 # Contributing
 
-**Wait-endpoint exception:** API endpoints whose purpose is to wait for an event or status change (including long polling) are exempt from the 100ms response deadline. Their HTTP request may remain open for that wait; it must not be cut off at 100ms or fail review or CI solely because of that duration. This exception applies to the response-deadline rules throughout this document. All other quality requirements remain applicable. It does not permit forwarding a known endpoint. This is a rule clarification; implementing wait endpoints is separate work.
+**Wait-endpoint exception:** API endpoints whose purpose is to wait for an event or status change (including long polling) are exempt from the 100ms response deadline. Their HTTP request may remain open for that wait; it must not be cut off at 100ms or fail review or CI solely because of that duration. This exception applies to the response-deadline rules throughout this document. Every individual wait request must be logged with its actual waiting duration; the response-deadline exception does not remove this documentation duty. All other quality requirements remain applicable. It does not permit forwarding a known endpoint. This is a rule clarification; implementing wait endpoints is separate work.
 
 ## Deviating From These Rules
 
