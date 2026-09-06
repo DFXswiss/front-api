@@ -1,0 +1,10 @@
+{
+  "all": true,
+  "include": ["**/*.js"],
+  "exclude": ["test/**", "coverage/**", "node_modules/**", "scripts/**"],
+  "temp-directory": "coverage/tmp",
+  "lines": 100,
+  "functions": 100,
+  "branches": 100,
+  "statements": 100
+}

@@ -1,0 +1,23 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: bash test/test-server.sh
+      - run: bash test/test-offered-routes.sh
+      - run: bash test/test-main-from-develop.sh
+      - run: bash test/test-auto-release-pr.sh
