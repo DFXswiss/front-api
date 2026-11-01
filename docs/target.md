@@ -16,6 +16,8 @@ Two instances of this process run at the same time. The public edge sends each c
 
 A customer call finishes within 100 ms. The call reads and writes only the local databases on the machine where this process runs. It does not wait on the upstream for that answer.
 
+A route that stays open while it waits for an event is not this target. The wait-endpoint exception on the front page stays until that route has moved. After it has moved, the call still finishes within 100 ms.
+
 ## Two local databases
 
 Each instance has both of these. They are not the same database.
