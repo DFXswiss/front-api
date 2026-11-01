@@ -4,6 +4,8 @@
 
 Public HTTP layer in front of the DFX backend. Listed routes (`GET`/`HEAD /` 302 to swagger, `/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.
 
+The target for customer endpoints is [docs/target.md](docs/target.md). That page does not change the rules on this page. An endpoint follows these rules until it has moved.
+
 ## Run
 
 After cloning the repository, start the front API and its loopback-only HTTP stub with one command:

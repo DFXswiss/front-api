@@ -111,6 +111,15 @@ grep -Fq 'Forwarding an unknown route does not make it a listed route.' "$repo_r
 grep -Fq 'Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.' "$repo_root/README.md" || fail "unknown_forward: README must say unlisted routes are not this process"
 grep -Fq 'Those routes belong to the upstream HTTP backend, not to this process.' "$repo_root/README.md" || fail "unknown_forward: README local-answers must say those routes belong to the upstream HTTP backend"
 grep -Fq 'never forwarded' "$repo_root/README.md" || fail "known_local: README must say listed routes are never forwarded"
+target_doc="$repo_root/docs/target.md"
+test -f "$target_doc" || fail "target: docs/target.md missing"
+grep -Fq 'docs/target.md' "$repo_root/README.md" || fail "target: README must link docs/target.md"
+grep -Fq 'within 100 ms' "$target_doc" || fail "target: customer calls finish within 100 ms"
+grep -Fq 'The write log only accepts commands.' "$target_doc" || fail "target: commands go to the write log"
+grep -Fq 'The read copy is a full copy of the upstream database.' "$target_doc" || fail "target: display comes from the read copy"
+if grep -Eiq 'realunit|dfxprd|dfxdev|dfxdb|dfx01|dfxapi|dfx28|dfx26|dfx2801' "$target_doc" "$repo_root/README.md" "$repo_root/CONTRIBUTING.md" "$repo_root/REVIEW.md"; then
+  fail "target: public docs must not name internal hosts or other products"
+fi
 grep -Fq 'must **never wait** on `BACKEND_URL`' "$repo_root/CONTRIBUTING.md" || fail "known_local: listed requests must never wait on BACKEND_URL"
 grep -Fq 'Forwarding a listed route is a hard fail' "$repo_root/REVIEW.md" || fail "known_local: REVIEW must fail listed forwarding"
 grep -q 'Unknown routes' "$repo_root/REVIEW.md" || fail "unknown_forward: REVIEW must require forwarding unknown routes"
