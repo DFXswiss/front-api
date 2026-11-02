@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node scripts/start-local.js",
-    "test": "bash test/test-server.sh && bash test/test-offered-routes.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh",
+    "test": "bash test/test-server.sh && bash test/test-offered-routes.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh && bash test/test-a38-guard.sh",
     "coverage:report": "c8 --check-coverage report"
   },
   "dependencies": {

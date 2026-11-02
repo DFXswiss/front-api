@@ -1,0 +1,43 @@
+{
+  "schema": "a38/v1",
+  "standard": "A38",
+  "documentation": "docs/a38.md",
+  "mode": "enforce",
+  "jobs": [
+    {
+      "id": "test",
+      "name": "test",
+      "timeout_s": 1200,
+      "workflow": ".github/workflows/test.yml",
+      "job": "test",
+      "command": "npm ci && bash test/test-server.sh && bash test/test-offered-routes.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh && bash test/test-a38-guard.sh"
+    }
+  ],
+  "exclusions": [
+    {
+      "workflow": ".github/workflows/a38-guard.yml",
+      "job": "guard",
+      "reason": "The report guard itself. It is a trusted pinned workflow that audits pull requests. It is not an author test of this process."
+    },
+    {
+      "workflow": ".github/workflows/auto-release-pr.yaml",
+      "job": "create-release-pr",
+      "reason": "Opens the release pull request after a push to develop. It is housekeeping, not an author test."
+    },
+    {
+      "workflow": ".github/workflows/front-api-dev.yaml",
+      "job": "build-and-push",
+      "reason": "Publishes the development image after a push to develop. It is not an author test."
+    },
+    {
+      "workflow": ".github/workflows/front-api-prd.yaml",
+      "job": "build-and-push",
+      "reason": "Publishes the production image after a push to main. It is not an author test."
+    },
+    {
+      "workflow": ".github/workflows/main-from-develop.yml",
+      "job": "only-develop",
+      "reason": "Checks that a pull request into main comes from this repository's develop branch. It reads GitHub pull-request metadata and is not an author test of this process."
+    }
+  ]
+}

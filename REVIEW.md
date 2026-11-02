@@ -55,8 +55,9 @@ repository hygiene rule in CONTRIBUTING.md.
 New or changed branches in `server.js` (503 vs 200, cache hit/miss, allowlist,
 timeout, 100ms deadline on known routes, unknown forwarding, poller gate) have a pin in `test/test-server.sh`. Workflow-gate
 changes have a pin in `test/test-main-from-develop.sh`. Automatic release-PR
-body-form changes have a pin in `test/test-auto-release-pr.sh`. Green CI
-without a pin for a behaviour change is fail. Every production `*.js` file
+body-form changes have a pin in `test/test-auto-release-pr.sh`.
+A38 guard workflow changes have a pin in `test/test-a38-guard.sh`.
+Green CI without a pin for a behaviour change is fail. Every production `*.js` file
 must report 100% statements, branches, functions and lines; a new script
 under the coverage include that is untested fails CI.
 
