@@ -19,7 +19,7 @@ this file was applied fully and correctly.
 
 ## Build & Test
 
-Use `npm start` for a one-command local start. It starts a loopback HTTP stub and then this process; setting `BACKEND_URL` uses that upstream HTTP backend without starting the stub. This convenience command does not replace the test suite, which remains the four bash commands documented below.
+Use `npm start` for a one-command local start. It starts a loopback HTTP stub and then this process; setting `BACKEND_URL` uses that upstream HTTP backend without starting the stub. This convenience command does not replace the test suite, which remains the five bash commands documented below.
 
 The 100% coverage gate applies to production JavaScript. The `scripts/` directory contains local start helpers and is not copied into the Docker image, so c8 excludes `scripts/**`. Production `server.js` must not be excluded, and production code must not be listed in `--exclude`.
 
@@ -32,17 +32,19 @@ The complete c8 exclude list is:
 The required suite is the GitHub Actions job `test`. It runs `npm ci`, then
 `bash test/test-server.sh` (behaviour pins **and** the 100% coverage gate),
 `bash test/test-offered-routes.sh` (usage catalog vs the served-path
-allowlist), `bash test/test-main-from-develop.sh`, and
-`bash test/test-auto-release-pr.sh`. Employees are not required to run it
-locally; those four commands are the local equivalent (`npm ci` first if `c8`
-is missing). Draft pull requests still run `test`. This repository does not
-skip CI on drafts and has no `ci:full` label.
+allowlist), `bash test/test-main-from-develop.sh`,
+`bash test/test-auto-release-pr.sh`, and `bash test/test-a38-guard.sh`.
+Employees are not required to run it locally; those five commands are the
+local equivalent (`npm ci` first if `c8` is missing). Draft pull requests
+still run `test`. This repository does not skip CI on drafts and has no
+`ci:full` label.
 
 ```bash
 bash test/test-server.sh
 bash test/test-offered-routes.sh
 bash test/test-main-from-develop.sh
 bash test/test-auto-release-pr.sh
+bash test/test-a38-guard.sh
 ```
 
 Every production JavaScript file must stay at **100% statement, branch,
@@ -72,6 +74,17 @@ documented exception exclude.
   forks even if the branch is named `develop`.
 - Merging into `main` publishes the production image tag; that merge is a human
   decision.
+
+## Local CI report (A38)
+
+Pull requests in this repository follow the A38 process.
+The process is pinned at commit b421c4a7c957738187aa620a44e2f115dd939bd1.
+The standard is [docs/a38.md](https://github.com/DFXswiss/agent/blob/b421c4a7c957738187aa620a44e2f115dd939bd1/docs/a38.md).
+The guard guide is [docs/a38-guard.md](https://github.com/DFXswiss/agent/blob/b421c4a7c957738187aa620a44e2f115dd939bd1/docs/a38-guard.md).
+The configuration is `.github/a38.json` and `.github/pr-guard.json`.
+This page is a pointer to that process, not a copy of it.
+The guard workflow leaves draft after the review record is valid and the required checks are green.
+
 - A pull request lands complete or it does not land. Findings raised in review
   on your own pull request are fixed in that pull request — never deferred to a
   follow-up unless the reviewer grants that in writing on the pull request.
@@ -113,9 +126,10 @@ When applicable, every pull request must include:
    `REQUEST_TIMEOUT_MS`, `FRONT_API_EXIT_AFTER_BOOT`, `PORT`, `BIND`,
    Dockerfile, `.github/workflows`).
 2. **A pin** in `test/test-server.sh` (`server.js` behaviour),
-   `test/test-main-from-develop.sh` (the main-source gate), and/or
-   `test/test-auto-release-pr.sh` (the automatic release-PR body) for every
-   behaviour the pull request changes.
+   `test/test-main-from-develop.sh` (the main-source gate),
+   `test/test-auto-release-pr.sh` (the automatic release-PR body), and/or
+   `test/test-a38-guard.sh` (the A38 guard workflow and its manifest) for
+   every behaviour the pull request changes.
 3. **Swagger allowlist** update when the set of paths this process answers
    itself changes (`isServedPath`, `CACHE_PREFIXES`).
 4. **`offered-routes.json`** update for every path this process answers

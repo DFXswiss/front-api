@@ -1,0 +1,53 @@
+# dfx pr guard. Do not check out the pull request. Do not add a run step.
+# The action is pinned to a reviewed commit of DFXswiss/agent.
+# It stays inactive until this file is on the default branch.
+
+name: dfx pr guard
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+  issue_comment:
+    types: [created, edited, deleted]
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: false
+        type: string
+      all_open:
+        description: Reconcile every open pull request
+        required: false
+        type: boolean
+        default: false
+  workflow_run:
+    # CI workflow whose completion can change readiness. Not this guard.
+    workflows: ["test"]
+    types: [completed]
+
+concurrency:
+  group: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.all_open)) && format('a38-pr-guard-sweep-{0}', github.repository) || format('a38-pr-guard-event-{0}-{1}', github.repository, github.event.workflow_run.head_sha || github.event.pull_request.head.sha || github.event.issue.number || github.event.inputs.pr || github.run_id) }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: write
+  actions: write
+  checks: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.all_open)) && 45 || 10 }}
+    steps:
+      - name: dfx pr guard
+        uses: DFXswiss/agent/.github/actions/a38-guard@b421c4a7c957738187aa620a44e2f115dd939bd1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          pr: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.pr || '' }}
+          all_open: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.all_open) }}
