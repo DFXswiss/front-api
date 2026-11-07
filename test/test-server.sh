@@ -43,6 +43,9 @@ if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; the
   fail "server.js must not serve stale cache"
 fi
 grep -q 'unknown_forward' "$test_js" || fail "unknown_forward: pin missing"
+grep -q 'isWalletPath' "$test_js" || fail "wallet_forward: pin missing"
+grep -Fq 'wallet-api unavailable' "$test_js" || fail "wallet_forward: 503 pin missing"
+grep -q 'function proxyWallet' "$server_js" || fail "wallet_forward: proxy missing"
 grep -Fq 'never named' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must forbid naming unknown routes"
 grep -Fq 'maxMs === undefined ? 100 : maxMs' "$test_js" || fail "known_local: helper 100ms cap is known routes only"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
