@@ -428,6 +428,51 @@ function proxy(req, res) {
   req.pipe(p);
 }
 
+function isWalletPath(url) {
+  const path = (url ?? '/').split('?')[0];
+  return path === '/v1/wallet' || path.startsWith('/v1/wallet/');
+}
+
+function proxyWallet(req, res) {
+  let target;
+  try {
+    target = new URL(process.env.WALLET_API_URL);
+  } catch {
+    sendJson(res, 503, { statusCode: 503, message: 'wallet-api unavailable', retryAfter: 30 }, 'wallet', {
+      connection: 'close',
+      'retry-after': '30',
+    });
+    return;
+  }
+  if (!canWrite(res)) return;
+  const opts = {
+    hostname: target.hostname,
+    port: backendPortFor(target),
+    path: req.url,
+    method: req.method,
+    headers: { ...req.headers, host: target.host },
+  };
+  const p = http.request(opts, (up) => {
+    const chunks = [];
+    up.on('data', (c) => chunks.push(c));
+    up.on('end', () => {
+      if (!canWrite(res)) return;
+      const body = Buffer.concat(chunks);
+      const headers = { ...up.headers };
+      delete headers['transfer-encoding'];
+      res.writeHead(up.statusCode, headers);
+      res.end(body);
+    });
+  });
+  p.on('error', () => {
+    sendJson(res, 503, { statusCode: 503, message: 'wallet-api unavailable', retryAfter: 30 }, 'wallet', {
+      connection: 'close',
+      'retry-after': '30',
+    });
+  });
+  req.pipe(p);
+}
+
 function cacheRefreshPaths() {
   const roots = [...CACHE_PREFIXES];
   const paths = swaggerSpec?.paths;
@@ -448,6 +493,10 @@ async function refreshCache() {
 }
 
 const server = http.createServer((req, res) => {
+  if (isWalletPath(req.url)) {
+    proxyWallet(req, res);
+    return;
+  }
   if (!isKnownLocalRequest(req)) {
     proxy(req, res);
     return;
@@ -535,6 +584,10 @@ const server = http.createServer((req, res) => {
 });
 
 server.on('upgrade', (req, socket, head) => {
+  if (isWalletPath(req.url)) {
+    if (!socket.destroyed) socket.destroy();
+    return;
+  }
   if (isKnownLocalRequest(req)) {
     if (!socket.destroyed) socket.destroy();
     return;
@@ -622,6 +675,8 @@ module.exports = {
   cacheRefreshPaths,
   rejectUnserved,
   proxy,
+  isWalletPath,
+  proxyWallet,
   swaggerHtml,
   countryDto,
   languageDto,
