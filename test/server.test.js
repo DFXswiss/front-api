@@ -452,8 +452,7 @@ async function main() {
   try {
     if (!isWalletPath('/v1/wallet')) fail('isWalletPath /v1/wallet');
     if (!isWalletPath('/v1/wallet/health?x=1')) fail('isWalletPath nested query');
-    if (isWalletPath('/v1/wallets')) fail('isWalletPath /v1/wallets');
-    if (isWalletPath('/v1/walletish')) fail('isWalletPath /v1/walletish');
+    if (isWalletPath('/v1/walletfoo')) fail('isWalletPath prefix boundary');
     if (isWalletPath('/v1/asset')) fail('isWalletPath /v1/asset');
     if (isWalletPath('/v1/other')) fail('isWalletPath /v1/other');
 
@@ -493,12 +492,14 @@ async function main() {
       got = await request(port, 'GET', '/v1/wallet/health');
       if (got.status !== 503) fail('wallet missing url status');
       if (got.body.indexOf('wallet-api unavailable') < 0) fail('wallet missing url body');
+      if (got.headers['x-front-api'] !== 'wallet') fail('wallet missing url via');
       if (seen.some((row) => String(row.path).startsWith('/v1/wallet'))) fail('wallet 503 must not hit backend');
 
       process.env.WALLET_API_URL = ':::';
       got = await request(port, 'GET', '/v1/wallet/health');
       if (got.status !== 503) fail('wallet bad url status');
       if (got.body.indexOf('wallet-api unavailable') < 0) fail('wallet bad url body');
+      if (got.headers['x-front-api'] !== 'wallet') fail('wallet bad url via');
       if (seen.some((row) => String(row.path).startsWith('/v1/wallet'))) fail('wallet bad url must not hit backend');
 
       delete process.env.WALLET_API_URL;
@@ -544,6 +545,7 @@ async function main() {
       if (got.status !== 503 || got.body.indexOf('wallet-api unavailable') < 0) {
         fail('wallet socket error');
       }
+      if (got.headers['x-front-api'] !== 'wallet') fail('wallet socket error via');
 
       const walletUp = {
         destroyed: false,
