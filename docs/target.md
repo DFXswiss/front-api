@@ -1,6 +1,6 @@
 # Target
 
-This page is the target. It is not what the process does today. Today, listed routes are answered here and unlisted traffic is forwarded. An endpoint keeps today's rules until that endpoint has moved.
+This page is the target. It is not what the process does today. Today, listed routes are answered here and unlisted traffic is forwarded. An endpoint keeps today's rules until that endpoint has moved. The exception today is `/v1/wallet` and `/v1/wallet/`, which are forwarded to `WALLET_API_URL`, or answered 503 when that URL is missing.
 
 ## Customer endpoints
 

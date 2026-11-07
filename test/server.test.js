@@ -248,6 +248,8 @@ async function main() {
     backendPortFor,
     REQUEST_TIMEOUT_MS,
     server,
+    isWalletPath,
+    proxyWallet,
   } = s;
 
   if (maybeExitAfterBoot() !== false) fail('maybeExitAfterBoot off');
@@ -448,6 +450,133 @@ async function main() {
 
   const port = await listen(server);
   try {
+    if (!isWalletPath('/v1/wallet')) fail('isWalletPath /v1/wallet');
+    if (!isWalletPath('/v1/wallet/health?x=1')) fail('isWalletPath nested query');
+    if (isWalletPath('/v1/walletfoo')) fail('isWalletPath prefix boundary');
+    if (isWalletPath('/v1/asset')) fail('isWalletPath /v1/asset');
+    if (isWalletPath('/v1/other')) fail('isWalletPath /v1/other');
+
+    let got;
+    const walletHits = [];
+    const walletSrv = http.createServer((req, res) => {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => {
+        walletHits.push({
+          method: req.method,
+          url: req.url,
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+        res.writeHead(201, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+      });
+    });
+    try {
+      const walletPort = await listen(walletSrv);
+      process.env.WALLET_API_URL = 'http://127.0.0.1:' + walletPort;
+      got = await request(port, 'POST', '/v1/wallet/register/begin?x=1', { a: 1 }, undefined, 0);
+      if (got.status !== 201) fail('wallet forward status');
+      if (
+        !walletHits.some(
+          (row) =>
+            row.method === 'POST' &&
+            row.url === '/v1/wallet/register/begin?x=1' &&
+            row.body === '{"a":1}',
+        )
+      ) {
+        fail('wallet forward request');
+      }
+      if (seen.some((row) => String(row.path).startsWith('/v1/wallet'))) fail('wallet must not hit backend');
+
+      delete process.env.WALLET_API_URL;
+      got = await request(port, 'GET', '/v1/wallet/health');
+      if (got.status !== 503) fail('wallet missing url status');
+      if (got.body.indexOf('wallet-api unavailable') < 0) fail('wallet missing url body');
+      if (got.headers['x-front-api'] !== 'wallet') fail('wallet missing url via');
+      if (seen.some((row) => String(row.path).startsWith('/v1/wallet'))) fail('wallet 503 must not hit backend');
+
+      process.env.WALLET_API_URL = ':::';
+      got = await request(port, 'GET', '/v1/wallet/health');
+      if (got.status !== 503) fail('wallet bad url status');
+      if (got.body.indexOf('wallet-api unavailable') < 0) fail('wallet bad url body');
+      if (got.headers['x-front-api'] !== 'wallet') fail('wallet bad url via');
+      if (seen.some((row) => String(row.path).startsWith('/v1/wallet'))) fail('wallet bad url must not hit backend');
+
+      delete process.env.WALLET_API_URL;
+      got = await request(port, 'POST', '/v1/other', { n: 1 }, undefined, 0);
+      if (got.status === 503 && got.body.indexOf('wallet-api unavailable') >= 0) {
+        fail('non-wallet must not be wallet 503');
+      }
+      if (!seen.some((row) => row.method === 'POST' && row.path === '/v1/other')) {
+        fail('non-wallet still reaches backend');
+      }
+
+      process.env.WALLET_API_URL = 'http://127.0.0.1:' + walletPort;
+      const blockedWallet = fakeRes();
+      blockedWallet.headersSent = true;
+      proxyWallet(
+        {
+          method: 'GET',
+          url: '/v1/wallet/health',
+          headers: {},
+          pipe() {
+            fail('blocked wallet must not pipe');
+          },
+        },
+        blockedWallet,
+      );
+
+      const racedWallet = fakeRes();
+      const racedWalletReq = new Readable({
+        read() {
+          this.push(null);
+        },
+      });
+      racedWalletReq.method = 'GET';
+      racedWalletReq.url = '/v1/wallet/health';
+      racedWalletReq.headers = { host: '127.0.0.1' };
+      proxyWallet(racedWalletReq, racedWallet);
+      racedWallet.headersSent = true;
+      racedWallet.writableEnded = true;
+      await sleep(50);
+
+      process.env.WALLET_API_URL = 'http://127.0.0.1:1';
+      got = await request(port, 'GET', '/v1/wallet/health', undefined, undefined, 0);
+      if (got.status !== 503 || got.body.indexOf('wallet-api unavailable') < 0) {
+        fail('wallet socket error');
+      }
+      if (got.headers['x-front-api'] !== 'wallet') fail('wallet socket error via');
+
+      const walletUp = {
+        destroyed: false,
+        destroy() {
+          this.destroyed = true;
+        },
+      };
+      server.emit(
+        'upgrade',
+        { method: 'GET', url: '/v1/wallet/health', httpVersion: '1.1', headers: {} },
+        walletUp,
+        Buffer.alloc(0),
+      );
+      if (!walletUp.destroyed) fail('wallet upgrade must destroy socket');
+      const walletUpDead = {
+        destroyed: true,
+        destroy() {
+          fail('already destroyed wallet upgrade must not destroy again');
+        },
+      };
+      server.emit(
+        'upgrade',
+        { method: 'GET', url: '/v1/wallet/health', httpVersion: '1.1', headers: {} },
+        walletUpDead,
+        Buffer.alloc(0),
+      );
+    } finally {
+      delete process.env.WALLET_API_URL;
+      await close(walletSrv);
+    }
+
     const blocked = fakeRes();
     blocked.headersSent = true;
     sendVersion({ headers: { accept: 'text/html' } }, blocked, localVersion(), 'local');
@@ -530,7 +659,7 @@ async function main() {
     closeReq.emit('aborted');
     await sleep(50);
 
-    let got = await request(port, 'PUT', '/v1/other', { n: 1 }, undefined, 0);
+    got = await request(port, 'PUT', '/v1/other', { n: 1 }, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward put body');
     got = await request(port, 'GET', '/v1/other', undefined, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward get body');
