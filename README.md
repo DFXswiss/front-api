@@ -55,7 +55,7 @@ expired cache body, never a live backend wait on that request.
 Everything this process does not list is forwarded to `BACKEND_URL` with
 no 100ms rule. Those routes belong to the upstream HTTP backend, not to this process.
 This repository does not name them.
-`/v1/wallet` and paths under `/v1/wallet/` are forwarded to `WALLET_API_URL`. If that URL is missing, the process answers 503 and does not forward them to `BACKEND_URL`.
+`/v1/wallet` and paths under `/v1/wallet/` are forwarded to `WALLET_API_URL`, or answered 503 when that URL is missing and not forwarded to `BACKEND_URL`.
 
 Every **known** HTTP response must finish within 100ms. Forwarding a known
 route is forbidden because that cannot guarantee 100ms. A slower known
