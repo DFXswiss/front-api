@@ -19,7 +19,7 @@ this file was applied fully and correctly.
 
 ## Build & Test
 
-Use `npm start` for a one-command local start. It starts a loopback HTTP stub and then this process; setting `BACKEND_URL` uses that upstream HTTP backend without starting the stub. This convenience command does not replace the test suite, which remains the five bash commands documented below.
+Use `npm start` for a one-command local start. It starts a loopback HTTP stub and then this process; setting `BACKEND_URL` uses that upstream HTTP backend without starting the stub. This convenience command does not replace the test suite, which remains the six bash commands documented below.
 
 The 100% coverage gate applies to production JavaScript. The `scripts/` directory contains local start helpers and is not copied into the Docker image, so c8 excludes `scripts/**`. Production `server.js` must not be excluded, and production code must not be listed in `--exclude`.
 
@@ -33,8 +33,9 @@ The required suite is the GitHub Actions job `test`. It runs `npm ci`, then
 `bash test/test-server.sh` (behaviour pins **and** the 100% coverage gate),
 `bash test/test-offered-routes.sh` (usage catalog vs the served-path
 allowlist), `bash test/test-main-from-develop.sh`,
-`bash test/test-auto-release-pr.sh`, and `bash test/test-a38-guard.sh`.
-Employees are not required to run it locally; those five commands are the
+`bash test/test-auto-release-pr.sh`, `bash test/test-a38-guard.sh`, and
+`bash test/test-staging-from-main.sh`.
+Employees are not required to run it locally; those six commands are the
 local equivalent (`npm ci` first if `c8` is missing). Draft pull requests
 still run `test`. This repository does not skip CI on drafts and has no
 `ci:full` label.
@@ -45,6 +46,7 @@ bash test/test-offered-routes.sh
 bash test/test-main-from-develop.sh
 bash test/test-auto-release-pr.sh
 bash test/test-a38-guard.sh
+bash test/test-staging-from-main.sh
 ```
 
 Every production JavaScript file must stay at **100% statement, branch,
@@ -69,6 +71,7 @@ documented exception exclude.
   title.
 - Release PRs (`develop` → `main`) are created automatically — never open them
   manually.
+- `staging` is moved only by the `staging-from-main.yml` workflow: it creates `staging` when absent, fast-forwards it to every new `main` head, and then starts the `front-api STG` build, which publishes the `stg` image tag. Pull requests never target `staging`.
 - CI rejects a pull request into `main` unless its head is this repository's
   `develop` branch (check name `Main only from develop`). The check also rejects
   forks even if the branch is named `develop`.
@@ -127,9 +130,10 @@ When applicable, every pull request must include:
    Dockerfile, `.github/workflows`).
 2. **A pin** in `test/test-server.sh` (`server.js` behaviour),
    `test/test-main-from-develop.sh` (the main-source gate),
-   `test/test-auto-release-pr.sh` (the automatic release-PR body), and/or
-   `test/test-a38-guard.sh` (the A38 guard workflow and its manifest) for
-   every behaviour the pull request changes.
+   `test/test-auto-release-pr.sh` (the automatic release-PR body),
+   `test/test-staging-from-main.sh` (the staging line and the STG image
+   workflow), and/or `test/test-a38-guard.sh` (the A38 guard workflow and its
+   manifest) for every behaviour the pull request changes.
 3. **Swagger allowlist** update when the set of paths this process answers
    itself changes (`isServedPath`, `CACHE_PREFIXES`).
 4. **`offered-routes.json`** update for every path this process answers

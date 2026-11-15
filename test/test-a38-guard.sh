@@ -72,6 +72,7 @@ grep -Fq 'bash test/test-offered-routes.sh' "$manifest" || fail "manifest: test-
 grep -Fq 'bash test/test-main-from-develop.sh' "$manifest" || fail "manifest: test-main-from-develop.sh missing from the command"
 grep -Fq 'bash test/test-auto-release-pr.sh' "$manifest" || fail "manifest: test-auto-release-pr.sh missing from the command"
 grep -Fq 'bash test/test-a38-guard.sh' "$manifest" || fail "manifest: test-a38-guard.sh missing from the command"
+grep -Fq 'bash test/test-staging-from-main.sh' "$manifest" || fail "manifest: test-staging-from-main.sh missing from the command"
 grep -Fq '"workflow": ".github/workflows/a38-guard.yml"' "$manifest" || fail "manifest: guard exclusion missing"
 grep -Fq '"job": "guard"' "$manifest" || fail "manifest: guard job exclusion missing"
 grep -Fq '"workflow": ".github/workflows/auto-release-pr.yaml"' "$manifest" || fail "manifest: auto-release exclusion missing"
@@ -81,6 +82,9 @@ grep -Fq '"workflow": ".github/workflows/front-api-prd.yaml"' "$manifest" || fai
 grep -Fq '"job": "build-and-push"' "$manifest" || fail "manifest: build-and-push exclusion missing"
 grep -Fq '"workflow": ".github/workflows/main-from-develop.yml"' "$manifest" || fail "manifest: main-from-develop exclusion missing"
 grep -Fq '"job": "only-develop"' "$manifest" || fail "manifest: only-develop exclusion missing"
+grep -Fq '"workflow": ".github/workflows/front-api-stg.yaml"' "$manifest" || fail "manifest: stg image exclusion missing"
+grep -Fq '"workflow": ".github/workflows/staging-from-main.yml"' "$manifest" || fail "manifest: staging-from-main exclusion missing"
+grep -Fq '"job": "fast-forward"' "$manifest" || fail "manifest: fast-forward exclusion missing"
 
 grep -Fq '"schema": "pr-guard/v1"' "$guard_cfg" || fail "pr_guard: schema missing"
 grep -Fq '"enforce": [' "$guard_cfg" || fail "pr_guard: enforce missing"
@@ -103,9 +107,11 @@ grep -Fq 'The configuration is `.github/a38.json` and `.github/pr-guard.json`.' 
 grep -Fq 'This page is a pointer to that process, not a copy of it.' "$contrib" || fail "contributing: pointer sentence missing"
 grep -Fq 'The guard workflow leaves draft after the review record is valid and the required checks are green.' "$contrib" || fail "contributing: leave-draft sentence missing"
 grep -Fq 'bash test/test-a38-guard.sh' "$contrib" || fail "contributing: suite must name this script"
-grep -Fq 'the five bash commands documented below.' "$contrib" || fail "contributing: five bash commands missing"
+grep -Fq 'the six bash commands documented below.' "$contrib" || fail "contributing: six bash commands missing"
 grep -Fq 'test/test-a38-guard.sh' "$test_wf" || fail "contributing: test.yml must run this script"
 grep -Fq 'test/test-a38-guard.sh' "$pkg" || fail "contributing: package.json test must run this script"
+grep -Fq 'test/test-staging-from-main.sh' "$test_wf" || fail "contributing: test.yml must run the staging script"
+grep -Fq 'test/test-staging-from-main.sh' "$pkg" || fail "contributing: package.json test must run the staging script"
 grep -Fq 'A38 guard workflow changes have a pin in `test/test-a38-guard.sh`.' "$review" || fail "contributing: REVIEW.md pin sentence missing"
 
 if [ -e "$repo_root/docs/a38.md" ] || [ -e "$repo_root/docs/a38-guard.md" ]; then

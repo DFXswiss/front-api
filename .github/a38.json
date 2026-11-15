@@ -10,7 +10,7 @@
       "timeout_s": 1200,
       "workflow": ".github/workflows/test.yml",
       "job": "test",
-      "command": "npm ci && bash test/test-server.sh && bash test/test-offered-routes.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh && bash test/test-a38-guard.sh"
+      "command": "npm ci && bash test/test-server.sh && bash test/test-offered-routes.sh && bash test/test-main-from-develop.sh && bash test/test-auto-release-pr.sh && bash test/test-a38-guard.sh && bash test/test-staging-from-main.sh"
     }
   ],
   "exclusions": [
@@ -38,6 +38,16 @@
       "workflow": ".github/workflows/main-from-develop.yml",
       "job": "only-develop",
       "reason": "Checks that a pull request into main comes from this repository's develop branch. It reads GitHub pull-request metadata and is not an author test of this process."
+    },
+    {
+      "workflow": ".github/workflows/front-api-stg.yaml",
+      "job": "build-and-push",
+      "reason": "Publishes the staging image after a push to staging or a dispatch from the staging-from-main workflow. It is not an author test."
+    },
+    {
+      "workflow": ".github/workflows/staging-from-main.yml",
+      "job": "fast-forward",
+      "reason": "Fast-forwards staging to every new main head and starts the STG build. It is housekeeping, not an author test."
     }
   ]
 }
