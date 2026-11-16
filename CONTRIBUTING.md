@@ -87,6 +87,7 @@ The guard guide is [docs/a38-guard.md](https://github.com/DFXswiss/agent/blob/35
 The configuration is `.github/a38.json` and `.github/pr-guard.json`.
 This page is a pointer to that process, not a copy of it.
 The guard workflow leaves draft after the review record is valid and the required checks are green.
+A draft that a person sets stays draft until a person marks the pull request Ready or a first-run review comment posted after that draft names the current head.
 
 - A pull request lands complete or it does not land. Findings raised in review
   on your own pull request are fixed in that pull request — never deferred to a
