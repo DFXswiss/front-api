@@ -64,7 +64,7 @@ exceeded`, emits an `ERROR` log, and CI fails.
 
 ## Images
 
-Push to `develop` publishes `dfxswiss/front-api:beta` and the git SHA. Push to `main` publishes `dfxswiss/front-api:latest` and the git SHA. After a successful push the workflow notifies the configured infrastructure repo (`DISPATCH_TOKEN` + `DISPATCH_REPO`). If those secrets are unset, the image is still published.
+Push to `develop` publishes `dfxswiss/front-api:beta` and the git SHA. Push to `main` publishes `dfxswiss/front-api:latest` and the git SHA. The `staging-from-main.yml` workflow fast-forwards `staging` to every new `main` head and then starts the STG build, which publishes `dfxswiss/front-api:stg` and the git SHA; nothing else moves `staging`, and pull requests never target it. After a successful push the workflow notifies the configured infrastructure repo (`DISPATCH_TOKEN` + `DISPATCH_REPO`). If those secrets are unset, the image is still published.
 
 This repository does not describe a particular deployment environment.
 

@@ -1,0 +1,81 @@
+name: Staging from main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-from-main
+  cancel-in-progress: false
+
+jobs:
+  fast-forward:
+    name: Fast-forward staging to main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+
+      - name: Fast-forward staging
+        id: fast_forward
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin staging >/dev/null; then
+            git fetch --no-tags origin staging
+          else
+            echo "::notice::origin/staging is missing; creating it at ${SHA}."
+            if git push origin "${SHA}:refs/heads/staging"; then
+              STAGING_SHA="${SHA}"
+            else
+              echo "::notice::Creating origin/staging failed; re-fetching to check whether the ref now exists."
+              git fetch --no-tags origin staging
+            fi
+          fi
+          if [ -z "${STAGING_SHA:-}" ]; then
+            if ! STAGING_SHA="$(git rev-parse --verify origin/staging 2>/dev/null)"; then
+              echo "::error::origin/staging is missing after the creation attempt; cannot continue."
+              exit 1
+            fi
+          fi
+          if [ "${STAGING_SHA}" = "${SHA}" ]; then
+            echo "::notice::origin/staging already points at ${SHA}; no fast-forward needed."
+            exit 0
+          fi
+          if git merge-base --is-ancestor "${SHA}" "${STAGING_SHA}"; then
+            if ! git merge-base --is-ancestor "${STAGING_SHA}" origin/main; then
+              echo "::error::origin/staging contains commits that are not on main; refusing to continue. Make staging an ancestor of main, then run this workflow again."
+              exit 1
+            fi
+            echo "::notice::origin/staging already contains ${SHA}; a newer main run moved it forward. Not dispatching the stg build for this older head."
+            echo "skip_dispatch=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "${STAGING_SHA}" "${SHA}"; then
+            echo "::error::origin/staging has diverged from main; refusing to force-push. Make staging an ancestor of ${SHA}, then run this workflow again."
+            exit 1
+          fi
+          git push origin "${SHA}:refs/heads/staging"
+          echo "::notice::Fast-forwarded refs/heads/staging to ${SHA}."
+
+      - name: Start STG build
+        if: steps.fast_forward.outputs.skip_dispatch != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run front-api-stg.yaml --ref staging

@@ -26,8 +26,9 @@ helper round-trip over 100ms is a red job, not a review note.
 - `skipped` does not count as green unless this repository documents that skip
   as expected. Today: `test` is not skipped on drafts.
 - `cancelled` is not a test failure and also not evidence.
-- Image jobs (`front-api DEV` / `front-api PRD`) run on push to a branch, not
-  on feature pull requests. They are not a gate for PRs into `develop`.
+- Image jobs (`front-api DEV` / `front-api STG` / `front-api PRD`) run on push
+  to a branch or, for STG, on dispatch from `staging-from-main.yml`, not on
+  feature pull requests. They are not a gate for PRs into `develop`.
 - For a release PR into `main`: `test` is green, and the development image tag
   was already published from `develop`.
 - Job `Main only from develop` must be `success` on PRs into `main`.
@@ -57,6 +58,7 @@ timeout, 100ms deadline on known routes, unknown forwarding, poller gate) have a
 changes have a pin in `test/test-main-from-develop.sh`. Automatic release-PR
 body-form changes have a pin in `test/test-auto-release-pr.sh`.
 A38 guard workflow changes have a pin in `test/test-a38-guard.sh`.
+Staging-line and STG image workflow changes have a pin in `test/test-staging-from-main.sh`.
 Green CI without a pin for a behaviour change is fail. Every production `*.js` file
 must report 100% statements, branches, functions and lines; a new script
 under the coverage include that is untested fails CI.
@@ -69,10 +71,11 @@ is a blocker — name no environment.
 
 ## 8. Image and workflow changes
 
-Dockerfile, workflows, and tags `:beta` / `:latest` / SHA stay on the existing
-pattern (`develop` → `:beta`, `main` → `:latest`, notify via `DISPATCH_TOKEN` /
-`DISPATCH_REPO` when set). No silent change of `runs-on`, secret names, or
-dispatch payload.
+Dockerfile, workflows, and tags `:beta` / `:stg` / `:latest` / SHA stay on the
+existing pattern (`develop` → `:beta`, `staging` → `:stg` with `staging`
+fast-forwarded from `main` only, `main` → `:latest`, notify via
+`DISPATCH_TOKEN` / `DISPATCH_REPO` when set). No silent change of `runs-on`,
+secret names, or dispatch payload.
 
 ## 9. Scope
 
