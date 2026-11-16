@@ -57,6 +57,10 @@ jobs:
             exit 0
           fi
           if git merge-base --is-ancestor "${SHA}" "${STAGING_SHA}"; then
+            if ! git merge-base --is-ancestor "${STAGING_SHA}" origin/main; then
+              echo "::error::origin/staging contains commits that are not on main; refusing to continue. Make staging an ancestor of main, then run this workflow again."
+              exit 1
+            fi
             echo "::notice::origin/staging already contains ${SHA}; a newer main run moved it forward. Not dispatching the stg build for this older head."
             echo "skip_dispatch=true" >> "${GITHUB_OUTPUT}"
             exit 0

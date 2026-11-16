@@ -13,6 +13,7 @@
 #   no force push                                    ff_no_force
 #   staging ref push                                 ff_push
 #   older head skips dispatch                        ff_older_head
+#   older-head path requires staging on main         ff_staging_on_main
 #   dispatch STG workflow from staging               ff_dispatch
 #   every run block uses strict mode                 ff_strict
 #   STG workflow name                                stg_name
@@ -70,6 +71,8 @@ fi
 grep -Fq 'git push origin "${SHA}:refs/heads/staging"' "$wf" || fail "ff_push: staging ref push missing"
 grep -Fq 'git merge-base --is-ancestor "${SHA}" "${STAGING_SHA}"' "$wf" || fail "ff_older_head: older-head check missing"
 grep -Fq 'skip_dispatch=true' "$wf" || fail "ff_older_head: skip_dispatch output missing"
+grep -Fq 'git merge-base --is-ancestor "${STAGING_SHA}" origin/main' "$wf" || fail "ff_staging_on_main: staging-on-main ancestor check missing"
+grep -Fq 'contains commits that are not on main; refusing to continue' "$wf" || fail "ff_staging_on_main: non-main commit refusal missing"
 grep -Fq "if: steps.fast_forward.outputs.skip_dispatch != 'true'" "$wf" || fail "ff_dispatch: dispatch condition missing"
 grep -Fq 'GH_TOKEN: ${{ github.token }}' "$wf" || fail "ff_dispatch: GH_TOKEN missing"
 grep -Fq 'gh workflow run front-api-stg.yaml --ref staging' "$wf" || fail "ff_dispatch: STG workflow dispatch missing"
