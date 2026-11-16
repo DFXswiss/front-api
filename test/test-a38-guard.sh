@@ -21,7 +21,7 @@ guard_cfg="$repo_root/.github/pr-guard.json"
 contrib="$repo_root/CONTRIBUTING.md"
 review="$repo_root/REVIEW.md"
 pkg="$repo_root/package.json"
-sha="b421c4a7c957738187aa620a44e2f115dd939bd1"
+sha="3528240c62d72e8f50f8ec5ddda0c4d213f0f04a"
 
 fail() {
   echo "FAIL: $*" >&2

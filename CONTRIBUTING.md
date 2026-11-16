@@ -81,9 +81,9 @@ documented exception exclude.
 ## Local CI report (A38)
 
 Pull requests in this repository follow the A38 process.
-The process is pinned at commit b421c4a7c957738187aa620a44e2f115dd939bd1.
-The standard is [docs/a38.md](https://github.com/DFXswiss/agent/blob/b421c4a7c957738187aa620a44e2f115dd939bd1/docs/a38.md).
-The guard guide is [docs/a38-guard.md](https://github.com/DFXswiss/agent/blob/b421c4a7c957738187aa620a44e2f115dd939bd1/docs/a38-guard.md).
+The process is pinned at commit 3528240c62d72e8f50f8ec5ddda0c4d213f0f04a.
+The standard is [docs/a38.md](https://github.com/DFXswiss/agent/blob/3528240c62d72e8f50f8ec5ddda0c4d213f0f04a/docs/a38.md).
+The guard guide is [docs/a38-guard.md](https://github.com/DFXswiss/agent/blob/3528240c62d72e8f50f8ec5ddda0c4d213f0f04a/docs/a38-guard.md).
 The configuration is `.github/a38.json` and `.github/pr-guard.json`.
 This page is a pointer to that process, not a copy of it.
 The guard workflow leaves draft after the review record is valid and the required checks are green.
