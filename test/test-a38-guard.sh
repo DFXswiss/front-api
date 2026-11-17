@@ -21,7 +21,7 @@ guard_cfg="$repo_root/.github/pr-guard.json"
 contrib="$repo_root/CONTRIBUTING.md"
 review="$repo_root/REVIEW.md"
 pkg="$repo_root/package.json"
-sha="b421c4a7c957738187aa620a44e2f115dd939bd1"
+sha="3528240c62d72e8f50f8ec5ddda0c4d213f0f04a"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -106,6 +106,7 @@ grep -Fq "The process is pinned at commit ${sha}." "$contrib" || fail "contribut
 grep -Fq 'The configuration is `.github/a38.json` and `.github/pr-guard.json`.' "$contrib" || fail "contributing: configuration sentence missing"
 grep -Fq 'This page is a pointer to that process, not a copy of it.' "$contrib" || fail "contributing: pointer sentence missing"
 grep -Fq 'The guard workflow leaves draft after the review record is valid and the required checks are green.' "$contrib" || fail "contributing: leave-draft sentence missing"
+grep -Fq 'A draft that a person sets stays draft until a person marks the pull request Ready or a first-run review comment posted after that draft names the current head.' "$contrib" || fail "contributing: draft-hold sentence missing"
 grep -Fq 'bash test/test-a38-guard.sh' "$contrib" || fail "contributing: suite must name this script"
 grep -Fq 'the six bash commands documented below.' "$contrib" || fail "contributing: six bash commands missing"
 grep -Fq 'test/test-a38-guard.sh' "$test_wf" || fail "contributing: test.yml must run this script"
