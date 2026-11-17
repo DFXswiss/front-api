@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# local one-command start (stub + process)          local_start
+# Pin test + 100% coverage gate for production JS (c8).
+#
+# Arms:
+#   local one-command start (stub + process)          local_start
+#   swagger snapshot empty → 503 local body          swagger_empty
+#   a path outside the allowlist is forwarded        unknown_forward
+#   expired GET /v1/asset after TTL → 503            ttl_expire
+#   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
+#   attachRequestTimeout on background refresh only  refresh_timeout
+#   no in-memory special-case book / stale cache     quotes_gone
+#   known GET ≤ 100ms; unknown is forwarded          max_response_100
+#   known miss is 503 not served                     known_local
+#   c8 100% lines/functions/branches/statements      coverage_100
+#   c8 --all includes every new production .js file  coverage_all
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+server_js="$repo_root/server.js"
+test_js="$repo_root/test/server.test.js"
+wf="$repo_root/.github/workflows/test.yml"
+pkg="$repo_root/package.json"
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+[ -f "$server_js" ] || fail "missing: $server_js"
+[ -f "$test_js" ] || fail "missing: $test_js"
+grep -q 'function isServedPath' "$server_js" || fail "isServedPath missing"
+grep -q 'if (!isServedPath(p)) continue' "$server_js" || fail "swagger snapshot must allowlist served paths"
+if grep -q 'low.includes' "$server_js"; then
+  fail "swagger snapshot must not denylist unserved routes"
+fi
+for banned in quoteBook refreshQuoteBook QUOTE_BOOK_REFRESH RAM_GET_PATHS scaleQuote isQuoteFresh pairKey rememberQuote EXACT_PUT_PATHS QUOTE_TTL_MS; do
+  if grep -q "$banned" "$server_js"; then
+    fail "server.js must not contain $banned"
+  fi
+done
+if grep -qE "x-front-api': 'stale'|\"x-front-api\": \"stale\"" "$server_js"; then
+  fail "server.js must not serve stale cache"
+fi
+grep -q 'unknown_forward' "$test_js" || fail "unknown_forward: pin missing"
+grep -q 'isWalletPath' "$test_js" || fail "wallet_forward: pin missing"
+grep -Fq 'wallet-api unavailable' "$test_js" || fail "wallet_forward: 503 pin missing"
+grep -Fq 'wallet-api unavailable' "$server_js" || fail "wallet_forward: 503 production pin missing"
+grep -Fq ", 'wallet'," "$server_js" || fail "wallet_forward: via pin missing"
+grep -q 'function proxyWallet' "$server_js" || fail "wallet_forward: proxy missing"
+grep -Fq "path === '/v1/wallet'" "$server_js" || fail "wallet_forward: path missing"
+grep -Fq "path.startsWith('/v1/wallet/')" "$server_js" || fail "wallet_forward: prefix missing"
+grep -Fq 'never named' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must forbid naming unknown routes"
+grep -Fq 'maxMs === undefined ? 100 : maxMs' "$test_js" || fail "known_local: helper 100ms cap is known routes only"
+grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
+grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
+grep -Fq 'orFallback(process.env.CACHE_TTL_MS, 300000)' "$server_js" || fail "cache_ttl_default: 5 minutes missing"
+
+c8rc="$repo_root/.c8rc.json"
+[ -f "$c8rc" ] || fail "coverage_100: missing .c8rc.json"
+grep -q '"lines": 100' "$c8rc" || fail "coverage_100: lines 100 missing from .c8rc.json"
+grep -q '"functions": 100' "$c8rc" || fail "coverage_100: functions 100 missing from .c8rc.json"
+grep -q '"branches": 100' "$c8rc" || fail "coverage_100: branches 100 missing from .c8rc.json"
+grep -q '"statements": 100' "$c8rc" || fail "coverage_100: statements 100 missing from .c8rc.json"
+grep -q '"all": true' "$c8rc" || fail "coverage_all: all missing from .c8rc.json"
+grep -Fq '"**/*.js"' "$c8rc" || fail "coverage_all: include **/*.js missing from .c8rc.json"
+grep -Fq '"test/**"' "$c8rc" || fail "coverage_all: test exclude missing from .c8rc.json"
+grep -Fq '"coverage/**"' "$c8rc" || fail "coverage_all: coverage exclude missing from .c8rc.json"
+grep -Fq '"node_modules/**"' "$c8rc" || fail "coverage_all: node_modules exclude missing from .c8rc.json"
+if grep -q 'server.js' "$c8rc"; then
+  fail "coverage_all: production server.js must not be excluded"
+fi
+grep -q '"c8"' "$pkg" || fail "coverage_100: c8 missing from package.json"
+grep -q 'npm ci' "$wf" || fail "coverage_100: CI must npm ci"
+grep -q 'package-lock.json' "$repo_root/Dockerfile" || fail "coverage_100: image must use lockfile"
+grep -q 'npm ci --omit=dev' "$repo_root/Dockerfile" || fail "coverage_100: image must npm ci omit dev"
+grep -q 'require.main === module' "$server_js" || fail "boot only when main"
+grep -Fq 'MAX_RESPONSE_MS = 100' "$server_js" || fail "max_response_100: constant missing"
+grep -q 'response deadline exceeded' "$server_js" || fail "max_response_100: deadline 503 missing"
+grep -Fq 'REQUEST_TIMEOUT_MS = outboundTimeoutMs(' "$server_js" || fail "max_response_100: REQUEST_TIMEOUT_MS must cap at MAX_RESPONSE_MS"
+grep -Fq 'if (!Number.isFinite(n) || n <= 0)' "$server_js" || fail "max_response_100: outbound timeout 0/NaN must not disable the cap"
+grep -q 'connectionTimeoutMillis: 90' "$server_js" || fail "max_response_100: pool acquire must not outlive the deadline"
+grep -Fq 'orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS)' "$server_js" || fail "REQUEST_TIMEOUT_MS default cap"
+grep -q 'attachResponseBudget(req, res)' "$server_js" || fail "max_response_100: inbound budget missing on known routes"
+grep -q 'function isKnownLocalRequest' "$server_js" || fail "known_local: must distinguish known GET routes from unknown"
+if ! grep -q 'function proxy' "$server_js"; then
+  fail "unknown_forward: unknown requests must be forwarded"
+fi
+grep -q 'req.pipe' "$server_js" || fail "unknown_forward: must pipe unknown requests outbound"
+grep -q 'net.connect' "$server_js" || fail "unknown_forward: upgrades must be tunnelled"
+if ! awk '/server.on\('\''upgrade'\''/,/^}\);$/' "$server_js" | grep -q 'isKnownLocalRequest'; then
+  fail "known_local: listed upgrades must not be tunnelled"
+fi
+grep -Fq 'ERROR response exceeded' "$server_js" || fail "max_response_100: production must ERROR-log a deadline miss"
+grep -q "SET statement_timeout TO 90" "$server_js" || fail "max_response_100: pool queries must not outlive the deadline"
+grep -q 'limit - 10' "$server_js" || fail "max_response_100: fire before 100ms so the 503 still finishes in budget"
+grep -Fq 'if (!canWrite(res)) return;' "$server_js" || fail "max_response_100: writers must refuse after the deadline"
+grep -Fq 'if (!res.destroyed) req.destroy();' "$server_js" || fail "max_response_100: deadline must cut an unfinished drain"
+grep -Fq "connection: 'close'" "$server_js" || fail "max_response_100: deadline 503 must close the connection"
+grep -q 'function rejectUnserved' "$server_js" || fail "known_local: uncached known GETs must 503 not served"
+grep -q 'refreshCache' "$server_js" || fail "known_local: GET cache must fill off the request path"
+grep -Fq "GET /v1/statistic/status" "$server_js" || fail "known_local: statistic status must fan-out from the list root"
+grep -q 'function embeddedStatisticStatus' "$server_js" || fail "known_local: statistic status fan-out helper missing"
+grep -Fq "location: 'swagger'" "$server_js" || fail "known_local: GET / must 302 to swagger"
+grep -Fq 'const roots = [...CACHE_PREFIXES];' "$server_js" || fail "known_local: background refresh must not include GET /"
+grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set must include roots and listed swagger paths"
+grep -Fq "req.method !== 'GET' && req.method !== 'HEAD'" "$server_js" || fail "known_local: GET and HEAD must be listed and cacheable"
+grep -Fq "startsWith(prefix + '/')" "$server_js" || fail "known_local: CACHE_PREFIXES must list nested paths"
+if grep -Fq 'return isCacheable(req)' "$server_js"; then
+  fail "known_local: Authorization must not make a listed request unknown"
+fi
+grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
+grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"
+grep -Fq "forbidden** to" "$repo_root/CONTRIBUTING.md" || fail "known_local: CONTRIBUTING must forbid waiting on the backend for known routes"
+grep -Fq "no** 100ms" "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING must say forwarded requests have no 100ms rule"
+grep -Fq 'Those routes are **not** endpoints of this process; they belong to the upstream HTTP backend.' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING process bullet must say those routes are not endpoints of this process"
+grep -Fq 'Forwarding an unknown route does not make it a listed route.' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CONTRIBUTING process bullet must say forwarding an unknown route does not list it"
+grep -Fq 'Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.' "$repo_root/README.md" || fail "unknown_forward: README must say unlisted routes are not this process"
+grep -Fq 'Those routes belong to the upstream HTTP backend, not to this process.' "$repo_root/README.md" || fail "unknown_forward: README local-answers must say those routes belong to the upstream HTTP backend"
+grep -Fq 'never forwarded' "$repo_root/README.md" || fail "known_local: README must say listed routes are never forwarded"
+target_doc="$repo_root/docs/target.md"
+test -f "$target_doc" || fail "target: docs/target.md missing"
+grep -Fq 'docs/target.md' "$repo_root/README.md" || fail "target: README must link docs/target.md"
+grep -Fq "Today, listed routes are answered here and unlisted traffic is forwarded. An endpoint keeps today's rules until that endpoint has moved." "$target_doc" || fail "target: today's rules stay until an endpoint moves"
+grep -Fq 'Every customer API endpoint will be answered by this process.' "$target_doc" || fail "target: customer endpoints are answered here"
+grep -Fq 'Endpoints move one at a time.' "$target_doc" || fail "target: endpoints move one at a time"
+grep -Fq 'A customer endpoint does not stay on the upstream as the lasting place that answers it.' "$target_doc" || fail "target: a customer endpoint does not stay on the upstream"
+grep -Fq 'Staff and operator tools are not customer endpoints.' "$target_doc" || fail "target: staff tools are not customer endpoints"
+grep -Fq 'This repository does not name them.' "$target_doc" || fail "target: staff tools are not named"
+grep -Fq 'Two instances of this process run at the same time.' "$target_doc" || fail "target: two instances"
+grep -Fq 'If one instance restarts, the other keeps answering.' "$target_doc" || fail "target: the other instance keeps answering"
+grep -Fq 'A customer call finishes within 100 ms.' "$target_doc" || fail "target: customer calls finish within 100 ms"
+grep -Fq 'The call reads and writes only the local databases on the machine where this process runs.' "$target_doc" || fail "target: calls use only the local databases"
+grep -Fq 'It does not wait on the upstream for that answer.' "$target_doc" || fail "target: the call does not wait on the upstream"
+grep -Fq 'A route that stays open while it waits for an event is not this target.' "$target_doc" || fail "target: a waiting route is not the target"
+grep -Fq 'The wait-endpoint exception on the front page stays until that route has moved.' "$target_doc" || fail "target: the wait exception stays until the route moves"
+grep -Fq 'After it has moved, the call still finishes within 100 ms.' "$target_doc" || fail "target: after the wait route has moved the call still finishes within 100 ms"
+grep -Fq 'The read copy is a full copy of the upstream database.' "$target_doc" || fail "target: display comes from the read copy"
+grep -Fq 'The newest row may be missing.' "$target_doc" || fail "target: a missing newest row is display lag"
+grep -Fq 'It is not money that failed to arrive.' "$target_doc" || fail "target: a missing newest row is not money that failed to arrive"
+grep -Fq 'The write log only accepts commands.' "$target_doc" || fail "target: commands go to the write log"
+grep -Fq 'A sync carries those rows to the upstream.' "$target_doc" || fail "target: the sync carries commands upstream"
+grep -Fq 'The upstream applies each command once and stores the result in the upstream database.' "$target_doc" || fail "target: the upstream applies each command once"
+grep -Fq 'The customer is told about the result by a push or a webhook.' "$target_doc" || fail "target: the customer is told by push or webhook"
+grep -Fq 'Without the upstream database, a payout does not run.' "$target_doc" || fail "target: no payout without the upstream database"
+grep -Fq 'What one endpoint does when only the local databases are reachable is decided by that endpoint.' "$target_doc" || fail "target: each endpoint decides when only local databases are up"
+grep -Fq 'must **never wait** on `BACKEND_URL`' "$repo_root/CONTRIBUTING.md" || fail "known_local: listed requests must never wait on BACKEND_URL"
+grep -Fq 'Forwarding a listed route is a hard fail' "$repo_root/REVIEW.md" || fail "known_local: REVIEW must fail listed forwarding"
+grep -q 'Unknown routes' "$repo_root/REVIEW.md" || fail "unknown_forward: REVIEW must require forwarding unknown routes"
+grep -Fq 'They are not endpoints of this process; they belong to the upstream HTTP backend.' "$repo_root/REVIEW.md" || fail "unknown_forward: REVIEW must say unknown routes are not endpoints of this process"
+grep -q 'forbidden' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must forbid code that cannot meet 100ms on known routes"
+grep -q 'ERROR' "$repo_root/CONTRIBUTING.md" || fail "max_response_100: CONTRIBUTING must require an ERROR log on a deadline miss"
+grep -q 'FRONT_API_EXIT_AFTER_BOOT=1' "$repo_root/test/run-main-coverage.sh" || fail "coverage_100: require.main collection missing"
+grep -q 'coverage:report' "$pkg" || fail "coverage_100: coverage:report script missing"
+grep -q -- '--check-coverage' "$pkg" || fail "coverage_100: check-coverage missing from package.json"
+
+grep -Fq '"start": "node scripts/start-local.js"' "$repo_root/package.json" || fail "local_start: package.json must define npm start"
+test -f "$repo_root/scripts/start-local.js" || fail "local_start: scripts/start-local.js missing"
+test -f "$repo_root/scripts/local-backend.js" || fail "local_start: scripts/local-backend.js missing"
+grep -Fq '"scripts/**"' "$repo_root/.c8rc.json" || fail "local_start: scripts must be excluded from production coverage"
+if grep -q 'server.js' "$repo_root/.c8rc.json"; then fail "coverage_all: production server.js must not be excluded"; fi
+if grep -q scripts "$repo_root/Dockerfile"; then fail "local_start: Dockerfile must not copy scripts/"; fi
+grep -Fq 'npm start' "$repo_root/README.md" || fail "local_start: README must document npm start"
+grep -Fq 'npm start' "$repo_root/CONTRIBUTING.md" || fail "local_start: CONTRIBUTING must document npm start"
+grep -Fq 'scripts/**' "$repo_root/CONTRIBUTING.md" || fail "local_start: CONTRIBUTING must document scripts coverage"
+if grep -Eq 'createLocalBackend|shouldStartLocalBackend|applyLocalDefaults' "$repo_root/server.js"; then
+  fail "local_start: stub helpers must not be added to production server.js"
+fi
+test -f "$repo_root/test/local-start.test.js" || fail "local_start: test/local-start.test.js missing"
+
+cd "$repo_root"
+if [ ! -d node_modules/c8 ]; then
+  npm ci
+fi
+
+npx c8 --reporter=text --reporter=text-summary node test/server.test.js || fail "server tests failed"
+
+bash "$repo_root/test/run-main-coverage.sh" || fail "require.main coverage run failed"
+
+npm run coverage:report || fail "coverage 100% gate failed"
+
+node "$repo_root/test/local-start.test.js" || fail "local_start: node test/local-start.test.js failed"
+
+echo "ok front-api server.js"
