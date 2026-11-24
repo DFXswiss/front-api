@@ -96,7 +96,7 @@ for (const p of CACHE_PREFIXES) {
 
 const expectedKeys = new Set();
 for (const p of CACHE_PREFIXES) expectedKeys.add('GET ' + p);
-for (const p of ['/', '/version', '/swagger', '/swagger-json']) expectedKeys.add('GET ' + p);
+for (const p of ['/', '/version']) expectedKeys.add('GET ' + p);
 for (const key of seen) {
   if (!expectedKeys.has(key)) fail('unexpected catalog row: ' + key);
 }

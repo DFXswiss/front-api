@@ -173,20 +173,21 @@ Missing any applicable item = changes requested.
 
 - This process answers a **fixed listed set** (`offered-routes.json`,
   `isServedPath`). A listed route is **finished here** from local state
-  (version, swagger snapshot, fresh GET/HEAD cache, optional Postgres). It is
+  (version, fresh GET/HEAD cache, optional Postgres). It is
   **forbidden** to document a route here and then forward that request to
   `BACKEND_URL`.
-- A listed client request must **never wait** on `BACKEND_URL`. A cache miss,
-  empty swagger snapshot, or missing database row is `503` `not served`
+- A listed client request must **never wait** on `BACKEND_URL`. A cache miss
+  or missing database row is `503` `not served`
   immediately. Background refresh may ping `BACKEND_URL` off the request path
   and must not delay the response. GET/HEAD `/` is local `302` `Location: swagger`
   and is not a JSON cache root.
-- Listed GET/HEAD paths are exact `/`, `/version`, the swagger aliases, and
+- Listed GET/HEAD paths are exact `/`, `/version`, and
   `CACHE_PREFIXES` as prefixes (`path === p || path.startsWith(p + '/')`).
   Nested paths under a listed prefix are listed.
-- `Authorization` does not make a listed GET unknown. Do not answer an
-  authenticated GET from the unauthenticated GET cache; when no other local
-  source exists, answer `503` `not served` — never forward.
+- A GET/HEAD on a listed path is listed only without `Authorization` and
+  without a query string. With either it is unlisted and forwarded to
+  `BACKEND_URL` like every other unlisted request, with no 100ms rule. A listed
+  request still never reads a cache entry for another query or another caller.
 - HEAD on a listed path is listed. It follows the same local body rules as GET
   and sends an empty response body.
 - Unlisted requests (everything for which `isKnownLocalRequest` is false)
@@ -196,7 +197,8 @@ Missing any applicable item = changes requested.
   Forwarded requests have **no** 100ms rule. Do not attach the 100ms budget
   to the forward path.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
-  denylist.
+  denylist. It is read in the background only to find listed nested paths to
+  pre-fill; this process no longer serves it.
 - Never serve an expired cache body.
 - Every **known** HTTP response from this process must complete within
   **100ms**. That bound is technical and always enforced, not a target. The
@@ -240,8 +242,9 @@ coverage. The coverage gate is the CI job, not a review courtesy.
 
 There is no **known** HTTP response this process may take longer than 100ms
 to finish. Known/listed routes are never forwarded. Unknown/unlisted requests
-are forwarded and are not in that budget. Nested listed prefixes, HEAD on
-listed paths, and authenticated listed GETs are listed, not unknown.
+are forwarded and are not in that budget. Nested listed prefixes and HEAD on
+listed paths are listed; a listed path with `Authorization` or a query string
+is not.
 `test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline on
 known routes, that known routes are not forwarded, that unknown routes are
 forwarded and belong to the upstream HTTP backend, the `ERROR` log, and the

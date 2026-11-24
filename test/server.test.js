@@ -130,9 +130,11 @@ function jsonHandler(routes, seen) {
       if (seen) {
         seen.push({
           method: req.method,
+          url: req.url,
           path: p,
           body: Buffer.concat(chunks).toString('utf8'),
           contentType: req.headers['content-type'] ?? '',
+          authorization: req.headers.authorization ?? '',
         });
       }
       const hit = routes[p];
@@ -217,7 +219,6 @@ async function main() {
     isCacheable,
     cacheKey,
     refreshSwagger,
-    swaggerHtml,
     countryDto,
     languageDto,
     tryDbRead,
@@ -277,8 +278,10 @@ async function main() {
   if (!CACHE_PREFIXES.includes('/v1/asset')) fail('CACHE_PREFIXES');
   if (getPool() !== null) fail('pool default');
 
-  if (!isServedPath('/version') || !isServedPath('/swagger/') || !isServedPath('/swagger-json/')) fail('isServedPath meta');
-  if (!isServedPath('/swagger-ui') || !isServedPath('/swagger-ui/')) fail('isServedPath ui');
+  if (!isServedPath('/version')) fail('isServedPath version');
+  if (isServedPath('/swagger')) fail('isServedPath swagger must be removed');
+  if (isServedPath('/swagger-json')) fail('isServedPath swagger-json must be removed');
+  if (isServedPath('/v1/app')) fail('isServedPath /v1/app must be removed');
   if (isServedPath('/v1/other')) fail('isServedPath outside allowlist');
   if (!isServedPath('/v1/asset') || !isServedPath(undefined)) fail('isServedPath');
   if (!isServedPath('/v1/asset/1')) fail('isServedPath nested asset');
@@ -289,15 +292,16 @@ async function main() {
   if (isServedPath('/v1/other')) fail('isServedPath outside listed prefixes');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: {} })) fail('known GET asset');
   if (!isKnownLocalRequest({ method: 'GET', url: '/version', headers: {} })) fail('known version');
-  if (isKnownLocalRequest({ method: 'PUT', url: '/v1/other', headers: {} })) fail('unknown method');
+  if (isKnownLocalRequest({ method: 'POST', url: '/v1/asset', headers: {} })) fail('unknown method');
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/other', headers: {} })) fail('unknown path');
-  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('known auth GET');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('auth GET must not be listed');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: '' } })) fail('empty auth GET must not be listed');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset?x=1', headers: {} })) fail('query GET must not be listed');
   if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('known HEAD');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('known asset id');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('known infoBanner');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/statistic/status', headers: {} })) fail('known statistic status');
   if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/statistic/status', headers: {} })) fail('known statistic status HEAD');
-  if (!isKnownLocalRequest({ method: 'GET', url: '/swagger-json', headers: { authorization: 'x' } })) fail('known swagger ignores auth');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
   if (!isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
@@ -306,8 +310,6 @@ async function main() {
   if (isCacheable({ method: 'GET', url: undefined, headers: {} })) fail('undefined url GET / not cacheable');
   if (!isCacheable({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('cache HEAD asset');
   if (!isCacheable({ method: 'GET', url: '/version', headers: {} })) fail('cache version');
-  if (!isCacheable({ method: 'GET', url: '/swagger', headers: {} })) fail('cache swagger');
-  if (!isCacheable({ method: 'GET', url: '/swagger-json', headers: {} })) fail('cache swagger-json');
   if (isCacheable({ method: 'PUT', url: '/v1/asset', headers: {} })) fail('cache PUT');
   if (isCacheable({ method: 'GET', url: '/v1/asset', headers: { authorization: 'x' } })) fail('cache auth');
   if (isCacheable({ method: 'GET', url: '/v1/other', headers: {} })) fail('cache outside allowlist');
@@ -316,7 +318,6 @@ async function main() {
   if (cacheKey({ method: 'GET', url: '/v1/asset?x=1' }) !== 'GET /v1/asset') fail('cacheKey query');
   if (cacheKey({ method: 'GET', url: undefined }) !== 'GET /') fail('cacheKey empty');
 
-  if (swaggerHtml().indexOf('swagger-ui') < 0) fail('swaggerHtml');
   if (localVersion().commit !== 'front-api') fail('localVersion');
   const hi = highlightJson({ a: 'b&<>', k: 'v' });
   if (hi.indexOf('&amp;') < 0 || hi.indexOf('&lt;') < 0 || hi.indexOf('class="k"') < 0) fail('highlightJson');
@@ -447,6 +448,9 @@ async function main() {
   if (!refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
   if (!refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
   if (!refreshPaths.includes('/version')) fail('cacheRefreshPaths listed swagger path');
+  if (refreshPaths.includes('/swagger') || refreshPaths.includes('/swagger-json')) {
+    fail('cacheRefreshPaths must not include swagger aliases');
+  }
 
   const port = await listen(server);
   try {
@@ -587,7 +591,6 @@ async function main() {
       r.headers = {};
       return r;
     };
-    server.emit('request', mkReq('/swagger'), blocked);
     server.emit('request', mkReq('/'), blocked);
     putCache('GET /v1/asset', 200, { 'content-type': 'application/json' }, Buffer.from('[]'));
     server.emit('request', mkReq('/v1/asset'), blocked);
@@ -687,26 +690,20 @@ async function main() {
     if (!seen.some((row) => row.method === 'PUT' && row.path === '/v1/other')) fail('unknown_forward put');
     if (!seen.some((row) => row.method === 'GET' && row.path === '/v1/other')) fail('unknown_forward get');
 
-    setSwaggerSpec(null);
-    got = await request(port, 'GET', '/swagger-json');
-    if (got.status !== 503) fail('swagger empty json');
-    got = await request(port, 'HEAD', '/swagger-json');
-    if (got.status !== 503 || got.body !== '' || got.headers['x-front-api'] !== 'local') fail('swagger empty HEAD');
-    got = await request(port, 'GET', '/swagger');
-    if (got.status !== 503) fail('swagger empty html');
-    got = await request(port, 'GET', '/swagger-ui/');
-    if (got.status !== 503) fail('swagger-ui empty');
-    setSwaggerSpec({ paths: { '/v1/asset': {} }, info: { title: 'x' } });
-    got = await request(port, 'GET', '/swagger-json/');
-    if (got.status !== 200) fail('swagger json');
-    got = await request(port, 'HEAD', '/swagger-json');
-    if (got.status !== 200 || got.body !== '' || !(+got.headers['content-length'] > 0)) fail('swagger json HEAD');
-    got = await request(port, 'GET', '/swagger/');
-    if (got.status !== 200) fail('swagger html');
-    got = await request(port, 'HEAD', '/swagger');
-    if (got.status !== 200 || got.body !== '' || !(+got.headers['content-length'] > 0)) fail('swagger html HEAD');
-    got = await request(port, 'GET', '/swagger-ui');
-    if (got.status !== 200) fail('swagger-ui');
+    const swaggerJsonSeen = seen.filter((row) => row.method === 'GET' && row.path === '/swagger-json').length;
+    got = await request(port, 'GET', '/swagger-json', undefined, undefined, 0);
+    if (got.status !== 200) fail('swagger-json must be forwarded');
+    if (got.headers['x-front-api'] === 'local') fail('swagger-json must not be local');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/swagger-json').length !== swaggerJsonSeen + 1) {
+      fail('swagger-json must reach the stub backend');
+    }
+    const appQuerySeen = seen.filter((row) => row.method === 'GET' && row.path === '/v1/app').length;
+    got = await request(port, 'GET', '/v1/app?code=x', undefined, undefined, 0);
+    if (got.status !== 500) fail('app query must be forwarded');
+    if (got.headers['x-front-api'] === 'local') fail('app query must not be local');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/app').length !== appQuerySeen + 1) {
+      fail('app query must reach the stub backend');
+    }
 
     got = await request(port, 'GET', '/version');
     if (got.status !== 200 || got.body.indexOf('front-api') < 0) fail('version json');
@@ -749,9 +746,6 @@ async function main() {
     got = await request(port, 'GET', '/v1/country');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'db') fail('db country');
     cache.delete('GET /v1/country');
-    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
-    if (got.status !== 200 || got.headers['x-front-api'] !== 'db') fail('auth db country');
-    if (getCached('GET /v1/country')) fail('auth db country must not fill public cache');
     setPool({ query: async () => null });
     got = await request(port, 'GET', '/v1/language');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db null');
@@ -770,16 +764,16 @@ async function main() {
     got = await request(port, 'GET', '/v1/language');
     if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('db catch must not proxy');
     setPool(null);
-    const authBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/country').length;
-    got = await request(port, 'GET', '/v1/country', undefined, { authorization: 'Bearer x' });
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('auth GET must be local miss');
-    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/country').length !== authBackendRequests) {
-      fail('auth GET must not be forwarded');
-    }
     putCache('GET /v1/asset', 200, { 'content-type': 'application/json' }, Buffer.from('{"public":true}'));
-    got = await request(port, 'GET', '/v1/asset', undefined, { authorization: 'Bearer x' });
-    if (got.status !== 503 || got.headers['x-front-api'] === 'hit' || got.body.includes('public')) {
-      fail('auth GET must not read public cache');
+    const authAssetSeen = seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset').length;
+    got = await request(port, 'GET', '/v1/asset', undefined, { authorization: 'Bearer x' }, 0);
+    if (got.status !== 200 || got.headers['x-front-api'] === 'hit' || got.body.includes('public')) {
+      fail('auth GET must be forwarded, not read the public cache');
+    }
+    const authRows = seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset');
+    if (authRows.length !== authAssetSeen + 1) fail('auth GET must be forwarded');
+    if (authRows[authRows.length - 1].authorization !== 'Bearer x') {
+      fail('auth GET must forward the authorization header');
     }
 
     await new Promise((resolve, reject) => {
@@ -856,7 +850,7 @@ async function main() {
 
     await refreshSwagger();
     await refreshCache();
-    if (getCached('GET /v1/app')) fail('refreshCache must skip non-200');
+    if (getCached('GET /v1/country')) fail('refreshCache must skip non-200');
     if (getCached('GET /')) fail('refreshCache must not fill GET /');
     if (!getCached('GET /v1/setting/infoBanner')) fail('refreshCache must fill listed nested swagger GET');
     if (!getCached('GET /v1/statistic/status')) fail('refreshCache must fan-out statistic status');
@@ -883,8 +877,11 @@ async function main() {
     if (got.status !== 200 || got.body !== '' || got.headers['x-front-api'] !== 'hit') {
       fail('HEAD statistic status must share GET cache');
     }
-    got = await request(port, 'GET', '/v1/asset?x=1');
-    if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('query must hit path cache');
+    got = await request(port, 'GET', '/v1/asset?x=1', undefined, undefined, 0);
+    if (got.status !== 200 || got.headers['x-front-api'] === 'hit') fail('query must be forwarded');
+    if (!seen.some((row) => row.method === 'GET' && row.url === '/v1/asset?x=1')) {
+      fail('query must reach the stub with the query string intact');
+    }
     got = await request(port, 'HEAD', '/v1/asset');
     if (got.status !== 200 || got.headers['x-front-api'] !== 'hit') fail('HEAD must share GET cache');
     if (got.body !== '') fail('HEAD cache hit must have empty body');

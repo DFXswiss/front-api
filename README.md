@@ -2,7 +2,7 @@
 
 **Wait-endpoint exception:** API endpoints whose purpose is to wait for an event or status change (including long polling) are exempt from the 100ms response deadline. Their HTTP request may remain open for that wait; it must not be cut off at 100ms or fail review or CI solely because of that duration. This exception applies to the response-deadline rules throughout this document. Every individual wait request must be logged with its actual waiting duration; the response-deadline exception does not remove this documentation duty. All other quality requirements remain applicable. It does not permit forwarding a known endpoint. This is a rule clarification; implementing wait endpoints is separate work.
 
-Public HTTP layer in front of the DFX backend. Listed routes (`GET`/`HEAD /` 302 to swagger, `/version`, a filtered swagger snapshot, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.
+Public HTTP layer in front of the DFX backend. Listed routes (`GET`/`HEAD /` 302 to swagger, `/version`, GET/HEAD cache, optional Postgres reads for country/language) are completed locally within 100ms, never forwarded, and never wait on `BACKEND_URL` for that client request. Background cache and swagger refresh may ping the upstream HTTP backend. Unlisted traffic is forwarded to the upstream HTTP backend and is **not** an endpoint of this process.
 
 The target for customer endpoints is [docs/target.md](docs/target.md). That page does not change the rules on this page. An endpoint follows these rules until it has moved.
 
@@ -42,10 +42,9 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 
 - `GET`/`HEAD /` — answered locally with 302 `Location: swagger`; HEAD has an empty body
 - `GET`/`HEAD /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`); HEAD has an empty body
-- `GET`/`HEAD /swagger`, `/swagger/`, `/swagger-ui`, `/swagger-ui/`, `/swagger-json`, `/swagger-json/` — filtered swagger snapshot from the upstream HTTP backend; an empty snapshot returns 503 locally
-- GET/HEAD cache (default 5 minutes) for the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank`, `/v1/app` (no `Authorization`). Nested paths under these prefixes are listed. Nested `GET`/`HEAD /v1/statistic/status` is answered from the cached list-root `status` object. HEAD follows the same local rules as GET and has an empty body.
+- GET/HEAD cache (default 5 minutes) for the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank` (only without `Authorization` and without a query string). Nested paths under these prefixes are listed. Nested `GET`/`HEAD /v1/statistic/status` is answered from the cached list-root `status` object. HEAD follows the same local rules as GET and has an empty body.
 - Optional Postgres reads for `GET`/`HEAD /v1/country` and `GET`/`HEAD /v1/language` when `SQL_HOST` is set
-- An authenticated listed GET/HEAD never reads the unauthenticated GET cache. Without another local source it returns `503` `not served`; it is never forwarded.
+- A GET/HEAD with `Authorization` or a query string is not listed and is forwarded to `BACKEND_URL`.
 
 Only fresh cache hits are served for known GETs. The cache is filled in the
 background, not during a client request. After the TTL the next known GET

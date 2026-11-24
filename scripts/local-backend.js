@@ -14,7 +14,6 @@ const PREFIXES = [
   '/v1/coin',
   '/v1/setting',
   '/v1/bank',
-  '/v1/app',
 ];
 
 const fixtures = {
@@ -64,7 +63,6 @@ const fixtures = {
   '/v1/coin': [{ id: 1 }],
   '/v1/setting': { infoBanner: null },
   '/v1/bank': [{ id: 1, name: 'Test Bank' }],
-  '/v1/app': { version: 'local' },
 };
 
 function orFallback(value, fallback) {
