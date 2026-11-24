@@ -4,7 +4,7 @@
 #
 # Arms:
 #   local one-command start (stub + process)          local_start
-#   swagger snapshot empty → 503 local body          swagger_empty
+#   listed_auth_query_forward  listed path with Authorization or a query is forwarded
 #   a path outside the allowlist is forwarded        unknown_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
@@ -106,8 +106,16 @@ grep -Fq 'const roots = [...CACHE_PREFIXES];' "$server_js" || fail "known_local:
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set must include roots and listed swagger paths"
 grep -Fq "req.method !== 'GET' && req.method !== 'HEAD'" "$server_js" || fail "known_local: GET and HEAD must be listed and cacheable"
 grep -Fq "startsWith(prefix + '/')" "$server_js" || fail "known_local: CACHE_PREFIXES must list nested paths"
+grep -Fq 'if (req.headers.authorization !== undefined) return false;' "$server_js" || fail "listed_auth_query_forward: any Authorization header must make a listed request unlisted"
+grep -Fq "url.includes('?')" "$server_js" || fail "listed_auth_query_forward: a query string must make a listed request unlisted"
+if grep -Fq 'function swaggerHtml' "$server_js"; then
+  fail "listed_auth_query_forward: swagger HTML must not be served locally"
+fi
+if grep -Fq "'/v1/app'" "$server_js"; then
+  fail "listed_auth_query_forward: /v1/app must not be listed"
+fi
 if grep -Fq 'return isCacheable(req)' "$server_js"; then
-  fail "known_local: Authorization must not make a listed request unknown"
+  fail "known_local: listed check must not reuse isCacheable"
 fi
 grep -Fq "(req.url ?? '/')" "$server_js" || fail "known_local: request path fallback must use ??"
 grep -Fq "if (!isKnownLocalRequest(req))" "$server_js" || fail "known_local: budget must not wrap forwarded requests"

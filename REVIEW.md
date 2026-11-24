@@ -124,7 +124,7 @@ function unless the reviewer grants that in writing.
 ## 12. Known routes: 100ms. Unknown routes: forwarded
 
 This process knows a fixed listed set of local GET/HEAD routes (GET/HEAD `/`
-302 to swagger, version, swagger snapshot, fresh GET/HEAD cache, optional
+302 to swagger, version, fresh GET/HEAD cache, optional
 Postgres). Every **known**
 HTTP response must finish within 100ms. Fail if `MAX_RESPONSE_MS` is not 100,
 if `REQUEST_TIMEOUT_MS` can exceed 100 for background refresh, if the inbound
@@ -134,9 +134,9 @@ emit an `ERROR` log, if the change adds a known path that cannot finish in
 100ms, or if a **known-route** test round-trip is allowed to take longer.
 Forwarding a listed route is a hard fail.
 
-Fail if the catalog says `prefix` or `exact` but the code forwards a matching
-nested GET/HEAD request or an authenticated listed GET. Listed authenticated
-GETs must not read the unauthenticated GET cache.
+Fail if the code forwards a nested GET/HEAD on a listed path that has no
+`Authorization` and no query string, or if it answers a request with
+`Authorization` or a query string from the local cache instead of forwarding it.
 
 Unknown routes (everything this process does not list) **must**
 be forwarded to `BACKEND_URL`. They are not endpoints of this process; they belong to the upstream HTTP backend.

@@ -31,8 +31,9 @@ function outboundTimeoutMs(raw) {
 const REQUEST_TIMEOUT_MS = outboundTimeoutMs(orFallback(process.env.REQUEST_TIMEOUT_MS, MAX_RESPONSE_MS));
 const STARTED = new Date().toISOString();
 
-// Public GET list roots this layer may answer from cache. Authenticated
-// requests are never cached.
+// Public GET list roots this layer may answer from cache. A request with an
+// Authorization header or a query string is forwarded, not answered from this
+// cache.
 const CACHE_PREFIXES = [
   '/v1/asset',
   '/v1/fiat',
@@ -42,7 +43,6 @@ const CACHE_PREFIXES = [
   '/v1/coin',
   '/v1/setting',
   '/v1/bank',
-  '/v1/app',
 ];
 
 const cache = new Map();
@@ -221,12 +221,6 @@ function getBackendJson(urlPath) {
 const EXACT_GET_PATHS = [
   '/',
   '/version',
-  '/swagger',
-  '/swagger/',
-  '/swagger-json',
-  '/swagger-json/',
-  '/swagger-ui',
-  '/swagger-ui/',
 ];
 
 function isServedPath(path) {
@@ -237,8 +231,10 @@ function isServedPath(path) {
 
 function isKnownLocalRequest(req) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
-  const path = (req.url ?? '/').split('?')[0];
-  return isServedPath(path);
+  if (req.headers.authorization !== undefined) return false;
+  const url = req.url ?? '/';
+  if (url.includes('?')) return false;
+  return isServedPath(url);
 }
 
 async function refreshSwagger() {
@@ -254,20 +250,6 @@ async function refreshSwagger() {
   } catch (err) {
     console.error('swagger refresh', err.message);
   }
-}
-
-function swaggerHtml() {
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><title>DFX API</title>
-<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
-</head><body>
-<div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>
-window.ui = SwaggerUIBundle({ url: '/swagger-json', dom_id: '#swagger-ui' });
-</script>
-</body></html>
-`;
 }
 
 function sendJson(res, status, body, via, extraHeaders) {
@@ -519,46 +501,18 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (path === '/swagger' || path === '/swagger/' || path === '/swagger-ui' || path === '/swagger-ui/') {
-    if (!swaggerSpec) {
-      sendJson(res, 503, { statusCode: 503, message: 'swagger snapshot empty' }, 'local');
-      return;
-    }
-    const html = Buffer.from(swaggerHtml());
+  const key = cacheKey(req);
+  const hit = getCached(key);
+  if (hit && Date.now() <= hit.exp) {
     if (!canWrite(res)) return;
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': html.length, 'x-front-api': 'local' });
+    const headers = { ...hit.headers, 'content-length': hit.body.length, 'x-front-api': 'hit' };
+    res.writeHead(hit.status, headers);
     if (req.method === 'HEAD') {
       res.end();
       return;
     }
-    res.end(html);
+    res.end(hit.body);
     return;
-  }
-
-  if (path === '/swagger-json' || path === '/swagger-json/') {
-    if (!swaggerSpec) {
-      sendJson(res, 503, { statusCode: 503, message: 'swagger snapshot empty' }, 'local');
-      return;
-    }
-    sendJson(res, 200, swaggerSpec, 'local');
-    return;
-  }
-
-  const cacheable = isCacheable(req);
-  const key = cacheKey(req);
-  if (cacheable) {
-    const hit = getCached(key);
-    if (hit && Date.now() <= hit.exp) {
-      if (!canWrite(res)) return;
-      const headers = { ...hit.headers, 'content-length': hit.body.length, 'x-front-api': 'hit' };
-      res.writeHead(hit.status, headers);
-      if (req.method === 'HEAD') {
-        res.end();
-        return;
-      }
-      res.end(hit.body);
-      return;
-    }
   }
 
   if (pool && DB_READ[path]) {
@@ -568,9 +522,7 @@ const server = http.createServer((req, res) => {
           rejectUnserved(res);
           return;
         }
-        if (cacheable) {
-          putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
-        }
+        putCache(key, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, body);
         sendJson(res, 200, body, 'db');
       })
       .catch((err) => {
@@ -677,7 +629,6 @@ module.exports = {
   proxy,
   isWalletPath,
   proxyWallet,
-  swaggerHtml,
   countryDto,
   languageDto,
   tryDbRead,
