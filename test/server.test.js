@@ -170,6 +170,7 @@ async function main() {
       '/v1/asset/x': { get: {} },
       '/v1/asset/{id}': { get: {} },
       '/v1/setting/infoBanner': { get: {} },
+      '/v1/setting/invalid': { get: {} },
       '/v1/other': { get: {} },
       '/version': { get: {} },
       '/v1/bank': { post: {} },
@@ -189,7 +190,14 @@ async function main() {
         status: { buy: 'ONLINE', sell: 'ONLINE' },
       },
       '/v1/setting': { ok: 1 },
-      '/v1/setting/infoBanner': { banner: 1 },
+      '/v1/setting/infoBanner': (req, res) => {
+        res.writeHead(200, {});
+        res.end();
+      },
+      '/v1/setting/invalid': (req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('not-json');
+      },
       '/v1/bank': { ok: 1 },
       '/v1/app': (req, res) => {
         res.writeHead(500, { 'content-type': 'application/json' });
@@ -853,6 +861,7 @@ async function main() {
     if (getCached('GET /v1/country')) fail('refreshCache must skip non-200');
     if (getCached('GET /')) fail('refreshCache must not fill GET /');
     if (!getCached('GET /v1/setting/infoBanner')) fail('refreshCache must fill listed nested swagger GET');
+    if (getCached('GET /v1/setting/invalid')) fail('refreshCache must not fill a non-JSON 200');
     if (!getCached('GET /v1/statistic/status')) fail('refreshCache must fan-out statistic status');
     if (getCached('GET /v1/other')) fail('refreshCache must not fill a path outside the allowlist');
     got = await request(port, 'GET', '/');
@@ -865,9 +874,15 @@ async function main() {
     if (got.headers.location !== 'swagger') fail('HEAD / Location swagger');
     if (got.body) fail('HEAD / must have empty body');
     got = await request(port, 'GET', '/v1/setting/infoBanner');
-    if (got.status !== 200 || got.body.indexOf('banner') < 0 || got.headers['x-front-api'] !== 'hit') {
-      fail('nested swagger GET must use background cache');
+    if (got.status !== 200 || got.body !== '' || got.headers['x-front-api'] !== 'hit') {
+      fail('empty_body_cache: GET must serve the cached empty body');
     }
+    if (got.headers['content-length'] !== '0') fail('empty_body_cache: GET content-length 0');
+    got = await request(port, 'HEAD', '/v1/setting/infoBanner');
+    if (got.status !== 200 || got.body !== '' || got.headers['x-front-api'] !== 'hit') {
+      fail('empty_body_cache: HEAD must serve the cached empty body');
+    }
+    if (got.headers['content-length'] !== '0') fail('empty_body_cache: HEAD content-length 0');
     got = await request(port, 'GET', '/v1/statistic/status');
     if (got.status !== 200 || got.body.indexOf('buy":"ONLINE') < 0 || got.body.indexOf('sell":"ONLINE') < 0) {
       fail('statistic status from list root');
@@ -973,6 +988,28 @@ s.refreshSwagger().then(()=>process.exit(0));`,
     setTimeout(() => child.kill('SIGKILL'), 5000);
   });
   await close(badJson);
+
+  const emptySwagger = http.createServer((req, res) => {
+    res.writeHead(200, {});
+    res.end();
+  });
+  const esPort = await listen(emptySwagger);
+  await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '-e',
+        `process.env.BACKEND_URL=${JSON.stringify('http://127.0.0.1:' + esPort)};
+const s=require(${JSON.stringify(serverJs)});
+s.refreshSwagger().then(()=>process.exit(0));`,
+      ],
+      { env: childEnv() },
+    );
+    child.on('exit', () => resolve());
+    child.on('error', reject);
+    setTimeout(() => child.kill('SIGKILL'), 5000);
+  });
+  await close(emptySwagger);
 
   const noPaths = http.createServer(jsonHandler({ '/swagger-json': { info: {} } }));
   const npPort = await listen(noPaths);
