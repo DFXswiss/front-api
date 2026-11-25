@@ -43,6 +43,7 @@ Optional: `PORT` (3000), `BIND` (`0.0.0.0`), `CACHE_TTL_MS` (default 300000), `C
 - `GET`/`HEAD /` — answered locally with 302 `Location: swagger`; HEAD has an empty body
 - `GET`/`HEAD /version` — answered locally (JSON, or HTML when `Accept` includes `text/html`); HEAD has an empty body
 - GET/HEAD cache (default 5 minutes) for the public prefixes `/v1/asset`, `/v1/fiat`, `/v1/country`, `/v1/language`, `/v1/statistic`, `/v1/coin`, `/v1/setting`, `/v1/bank` (only without `Authorization` and without a query string). Nested paths under these prefixes are listed. Nested `GET`/`HEAD /v1/statistic/status` is answered from the cached list-root `status` object. HEAD follows the same local rules as GET and has an empty body.
+- A `200` with an empty upstream body is cached and served as an empty `200`.
 - Optional Postgres reads for `GET`/`HEAD /v1/country` and `GET`/`HEAD /v1/language` when `SQL_HOST` is set
 - A GET/HEAD with `Authorization` or a query string is not listed and is forwarded to `BACKEND_URL`.
 

@@ -201,8 +201,12 @@ function getBackendJson(urlPath) {
         resp.on('data', (c) => chunks.push(c));
         resp.on('end', () => {
           const raw = Buffer.concat(chunks).toString('utf8');
+          if (raw === '') {
+            resolve({ status: resp.statusCode, json: null, empty: true });
+            return;
+          }
           try {
-            resolve({ status: resp.statusCode, json: JSON.parse(raw) });
+            resolve({ status: resp.statusCode, json: JSON.parse(raw), empty: false });
           } catch (err) {
             reject(err);
           }
@@ -240,7 +244,7 @@ function isKnownLocalRequest(req) {
 async function refreshSwagger() {
   try {
     const got = await getBackendJson('/swagger-json');
-    if (!got.json || !got.json.paths) return;
+    if (got.empty || !got.json || !got.json.paths) return;
     const paths = {};
     for (const [p, ops] of Object.entries(got.json.paths)) {
       if (!isServedPath(p)) continue;
@@ -467,6 +471,10 @@ async function refreshCache() {
     try {
       const got = await getBackendJson(p);
       if (got.status !== 200) continue;
+      if (got.empty) {
+        putCache('GET ' + p, 200, { 'access-control-allow-origin': '*' }, Buffer.alloc(0));
+        continue;
+      }
       putCache('GET ' + p, 200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }, Buffer.from(JSON.stringify(got.json)));
     } catch (err) {
       console.error('cache refresh', p, err.message);

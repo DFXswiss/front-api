@@ -7,6 +7,7 @@
 #   listed_auth_query_forward  listed path with Authorization or a query is forwarded
 #   a path outside the allowlist is forwarded        unknown_forward
 #   expired GET /v1/asset after TTL → 503            ttl_expire
+#   200 with an empty upstream body is cached        empty_body_cache
 #   default CACHE_TTL_MS is 5 minutes                cache_ttl_default
 #   attachRequestTimeout on background refresh only  refresh_timeout
 #   no in-memory special-case book / stale cache     quotes_gone
@@ -54,6 +55,7 @@ grep -Fq 'never named' "$repo_root/CONTRIBUTING.md" || fail "unknown_forward: CO
 grep -Fq 'maxMs === undefined ? 100 : maxMs' "$test_js" || fail "known_local: helper 100ms cap is known routes only"
 grep -q 'ttl_expire' "$test_js" || fail "ttl_expire: pin missing"
 grep -Fq "CACHE_TTL_MS = '2000'" "$test_js" || fail "ttl_expire: CACHE_TTL_MS pin missing"
+grep -Fq 'empty: true' "$server_js" || fail "empty_body_cache: empty upstream body must be cached as empty"
 grep -Fq 'orFallback(process.env.CACHE_TTL_MS, 300000)' "$server_js" || fail "cache_ttl_default: 5 minutes missing"
 
 c8rc="$repo_root/.c8rc.json"
