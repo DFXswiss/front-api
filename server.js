@@ -86,7 +86,7 @@ function isCacheable(req) {
   if (req.headers.authorization) return false;
   const path = (req.url ?? '/').split('?')[0];
   if (path === '/') return false;
-  return isServedPath(path);
+  return isLocallyFilledPath(path);
 }
 
 function getCached(key) {
@@ -227,10 +227,40 @@ const EXACT_GET_PATHS = [
   '/version',
 ];
 
+// Nested paths under CACHE_PREFIXES that this process fills itself without a
+// swagger snapshot. /v1/statistic/status is derived from the cached list root.
+const DERIVED_GET_PATHS = [
+  '/v1/statistic/status',
+];
+
+// Scope of the swagger allowlist: exact paths and everything under a listed
+// prefix. Being in scope does not make a nested path answered here; see
+// isLocallyFilledPath.
 function isServedPath(path) {
   const p = (path ?? '/').split('?')[0];
   if (EXACT_GET_PATHS.includes(p)) return true;
   return CACHE_PREFIXES.some((prefix) => p === prefix || p.startsWith(prefix + '/'));
+}
+
+function swaggerListsGet(path) {
+  const paths = swaggerSpec?.paths;
+  if (!paths) return false;
+  const ops = paths[path];
+  if (!ops) return false;
+  return ops.get !== undefined;
+}
+
+// A path is answered here only if this process can actually fill it: an exact
+// path, a listed prefix itself, a derived path, or a nested path with a GET in
+// the loaded swagger snapshot. Every other path is forwarded to BACKEND_URL.
+function isLocallyFilledPath(path) {
+  const p = (path ?? '/').split('?')[0];
+  if (EXACT_GET_PATHS.includes(p)) return true;
+  if (CACHE_PREFIXES.includes(p)) return true;
+  if (DERIVED_GET_PATHS.includes(p)) return true;
+  if (!isServedPath(p)) return false;
+  if (p.includes('{')) return false;
+  return swaggerListsGet(p);
 }
 
 function isKnownLocalRequest(req) {
@@ -238,7 +268,7 @@ function isKnownLocalRequest(req) {
   if (req.headers.authorization !== undefined) return false;
   const url = req.url ?? '/';
   if (url.includes('?')) return false;
-  return isServedPath(url);
+  return isLocallyFilledPath(url);
 }
 
 async function refreshSwagger() {
@@ -463,7 +493,7 @@ function cacheRefreshPaths() {
   const roots = [...CACHE_PREFIXES];
   const paths = swaggerSpec?.paths;
   if (!paths) return roots;
-  return [...new Set([...roots, ...Object.keys(paths).filter((path) => isServedPath(path) && path !== '/')])];
+  return [...new Set([...roots, ...Object.keys(paths).filter((path) => isLocallyFilledPath(path) && path !== '/')])];
 }
 
 async function refreshCache() {
@@ -625,8 +655,10 @@ module.exports = {
   CACHE_MAX,
   CACHE_PREFIXES,
   EXACT_GET_PATHS,
+  DERIVED_GET_PATHS,
   cache,
   isServedPath,
+  isLocallyFilledPath,
   isKnownLocalRequest,
   isCacheable,
   cacheKey,

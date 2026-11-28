@@ -134,9 +134,13 @@ emit an `ERROR` log, if the change adds a known path that cannot finish in
 100ms, or if a **known-route** test round-trip is allowed to take longer.
 Forwarding a listed route is a hard fail.
 
-Fail if the code forwards a nested GET/HEAD on a listed path that has no
-`Authorization` and no query string, or if it answers a request with
-`Authorization` or a query string from the local cache instead of forwarding it.
+Fail if the code forwards a listed GET/HEAD (a listed prefix itself, `/`,
+`/version`, `/v1/statistic/status`, or a nested path known from the loaded
+swagger snapshot) that has no `Authorization` and no query string, or if it
+answers a request with `Authorization` or a query string from the local cache
+instead of forwarding it. Fail if a nested path under a listed prefix that this
+process cannot fill (not in the loaded swagger snapshot) is answered `503`
+`not served` instead of being forwarded.
 
 Unknown routes (everything this process does not list) **must**
 be forwarded to `BACKEND_URL`. They are not endpoints of this process; they belong to the upstream HTTP backend.

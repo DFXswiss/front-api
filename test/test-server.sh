@@ -13,6 +13,7 @@
 #   no in-memory special-case book / stale cache     quotes_gone
 #   known GET ≤ 100ms; unknown is forwarded          max_response_100
 #   known miss is 503 not served                     known_local
+#   nested path not fillable here is forwarded       nested_unfillable_forward
 #   c8 100% lines/functions/branches/statements      coverage_100
 #   c8 --all includes every new production .js file  coverage_all
 set -euo pipefail
@@ -107,7 +108,14 @@ grep -Fq "location: 'swagger'" "$server_js" || fail "known_local: GET / must 302
 grep -Fq 'const roots = [...CACHE_PREFIXES];' "$server_js" || fail "known_local: background refresh must not include GET /"
 grep -q 'function cacheRefreshPaths' "$server_js" || fail "known_local: GET cache refresh set must include roots and listed swagger paths"
 grep -Fq "req.method !== 'GET' && req.method !== 'HEAD'" "$server_js" || fail "known_local: GET and HEAD must be listed and cacheable"
-grep -Fq "startsWith(prefix + '/')" "$server_js" || fail "known_local: CACHE_PREFIXES must list nested paths"
+grep -Fq "startsWith(prefix + '/')" "$server_js" || fail "known_local: CACHE_PREFIXES must scope nested paths for the swagger allowlist"
+grep -q 'function isLocallyFilledPath' "$server_js" || fail "nested_unfillable_forward: listed check must be limited to paths this process can fill"
+grep -Fq 'return isLocallyFilledPath(url);' "$server_js" || fail "nested_unfillable_forward: isKnownLocalRequest must use isLocallyFilledPath"
+grep -Fq 'return swaggerListsGet(p);' "$server_js" || fail "nested_unfillable_forward: nested paths are listed only from the loaded swagger snapshot"
+grep -Fq "'/v1/statistic/status'," "$server_js" || fail "nested_unfillable_forward: derived statistic status must be enumerated"
+grep -q 'nested_unfillable_forward' "$test_js" || fail "nested_unfillable_forward: pin missing"
+grep -Fq 'otherwise forwarded' "$repo_root/README.md" || fail "nested_unfillable_forward: README must say unfillable nested paths are forwarded"
+grep -Fq 'otherwise forwarded' "$repo_root/CONTRIBUTING.md" || fail "nested_unfillable_forward: CONTRIBUTING must say unfillable nested paths are forwarded"
 grep -Fq 'if (req.headers.authorization !== undefined) return false;' "$server_js" || fail "listed_auth_query_forward: any Authorization header must make a listed request unlisted"
 grep -Fq "url.includes('?')" "$server_js" || fail "listed_auth_query_forward: a query string must make a listed request unlisted"
 if grep -Fq 'function swaggerHtml' "$server_js"; then

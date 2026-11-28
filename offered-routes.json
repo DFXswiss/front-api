@@ -1,6 +1,6 @@
 {
   "title": "Offered routes: usage and frontend E2E",
-  "rules": "Every path this process answers itself has a row. Exact rows list only their names and aliases; prefix rows also list every nested path. A request without Authorization and without a query string on a listed GET/HEAD path is answered locally; a miss is 503 not served, never forwarded. A request with Authorization or a query string is not listed and goes to the upstream HTTP backend. usedIn is a public consumer repo+file, or unidentified:true with a note when no public call site is named. e2e is a frontend-inclusive E2E in a public repo (any branch), or unidentified:true when none is named. This repo's CI checks fields only and does not run foreign suites. Private repositories are not named. Backend routes this process does not serve are not listed.",
+  "rules": "Every path this process answers itself has a row. Exact rows list only their names and aliases; prefix rows cover the prefix itself and the nested paths this process can fill (known from a successfully loaded swagger snapshot, plus /v1/statistic/status); a nested path it cannot fill is otherwise forwarded to the upstream HTTP backend. A request without Authorization and without a query string on a listed GET/HEAD path is answered locally; a miss is 503 not served, never forwarded. A request with Authorization or a query string is not listed and goes to the upstream HTTP backend. usedIn is a public consumer repo+file, or unidentified:true with a note when no public call site is named. e2e is a frontend-inclusive E2E in a public repo (any branch), or unidentified:true when none is named. This repo's CI checks fields only and does not run foreign suites. Private repositories are not named. Backend routes this process does not serve are not listed.",
   "routes": [
     {
       "method": "GET",
@@ -45,7 +45,7 @@
         {
           "repo": "DFXswiss/packages",
           "path": "packages/react/src/hooks/asset.hook.ts",
-          "note": "GET AssetUrl.get (asset). This prefix and its nested paths: without Authorization and without a query string they are served from the background GET cache (miss = 503 not served, never forwarded); with Authorization or a query string they are not listed and go to the upstream HTTP backend."
+          "note": "GET AssetUrl.get (asset). This prefix and the nested paths known from the swagger snapshot: without Authorization and without a query string they are served from the background GET cache (miss = 503 not served, never forwarded); other nested paths are forwarded to the upstream HTTP backend; with Authorization or a query string they are not listed and go to the upstream HTTP backend."
         },
         {
           "repo": "DFXswiss/app",
@@ -162,7 +162,7 @@
       "usedIn": [
         {
           "unidentified": true,
-          "note": "Prefix on the swagger allowlist. Without Authorization and without a query string the root and nested paths are served from the background GET cache (miss = 503 not served, never forwarded); with Authorization or a query string they are not listed and go to the upstream HTTP backend. No named call site in DFXswiss/packages or DFXswiss/app."
+          "note": "Prefix on the swagger allowlist. Without Authorization and without a query string the root and the nested paths known from the swagger snapshot are served from the background GET cache (miss = 503 not served, never forwarded); other nested paths are forwarded to the upstream HTTP backend; with Authorization or a query string they are not listed and go to the upstream HTTP backend. No named call site in DFXswiss/packages or DFXswiss/app."
         }
       ],
       "e2e": [
@@ -180,7 +180,7 @@
         {
           "repo": "DFXswiss/packages",
           "path": "packages/react/src/hooks/settings.hook.ts",
-          "note": "GET SettingsUrl.infoBanner (setting/infoBanner)."
+          "note": "GET SettingsUrl.infoBanner (setting/infoBanner). Answered from the background GET cache only when the loaded swagger snapshot lists it with a GET; without a swagger snapshot it is forwarded to the upstream HTTP backend."
         }
       ],
       "e2e": [

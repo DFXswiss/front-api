@@ -136,7 +136,7 @@ When applicable, every pull request must include:
    workflow), and/or `test/test-a38-guard.sh` (the A38 guard workflow and its
    manifest) for every behaviour the pull request changes.
 3. **Swagger allowlist** update when the set of paths this process answers
-   itself changes (`isServedPath`, `CACHE_PREFIXES`).
+   itself changes (`isServedPath`, `isLocallyFilledPath`, `CACHE_PREFIXES`).
 4. **`offered-routes.json`** update for every path this process answers
    itself: a `usedIn` pointer (public consumer repo + file, or
    `unidentified: true` with a note) and an `e2e` pointer
@@ -181,9 +181,14 @@ Missing any applicable item = changes requested.
   immediately. Background refresh may ping `BACKEND_URL` off the request path
   and must not delay the response. GET/HEAD `/` is local `302` `Location: swagger`
   and is not a JSON cache root.
-- Listed GET/HEAD paths are exact `/`, `/version`, and
-  `CACHE_PREFIXES` as prefixes (`path === p || path.startsWith(p + '/')`).
-  Nested paths under a listed prefix are listed.
+- Listed GET/HEAD paths are exact `/`, `/version`, each `CACHE_PREFIXES`
+  entry itself, and `/v1/statistic/status` (derived from the cached list
+  root). A nested path under a listed prefix
+  (`path.startsWith(p + '/')`) is listed only if it is known from the swagger
+  snapshot (a `get` operation in a successfully loaded snapshot, templates such
+  as `{id}` excluded); otherwise forwarded to `BACKEND_URL`. This process only
+  answers what it can actually fill (`isLocallyFilledPath`); there is no
+  forwarding list.
 - A GET/HEAD on a listed path is listed only without `Authorization` and
   without a query string. With either it is unlisted and forwarded to
   `BACKEND_URL` like every other unlisted request, with no 100ms rule. A listed
@@ -198,7 +203,8 @@ Missing any applicable item = changes requested.
   to the forward path.
 - The swagger snapshot is an **allowlist** of paths this process serves, not a
   denylist. It is read in the background only to find listed nested paths to
-  pre-fill; this process no longer serves it.
+  pre-fill; this process no longer serves it. When the upstream exposes no
+  swagger snapshot, no nested path is listed and all of them are forwarded.
 - Never serve an expired cache body.
 - Every **known** HTTP response from this process must complete within
   **100ms**. That bound is technical and always enforced, not a target. The
@@ -242,9 +248,10 @@ coverage. The coverage gate is the CI job, not a review courtesy.
 
 There is no **known** HTTP response this process may take longer than 100ms
 to finish. Known/listed routes are never forwarded. Unknown/unlisted requests
-are forwarded and are not in that budget. Nested listed prefixes and HEAD on
-listed paths are listed; a listed path with `Authorization` or a query string
-is not.
+are forwarded and are not in that budget. Nested paths under a listed prefix
+are listed only if known from the swagger snapshot; otherwise forwarded. HEAD
+on listed paths is listed; a listed path with `Authorization` or a query
+string is not.
 `test/test-server.sh` pins `MAX_RESPONSE_MS = 100`, the inbound deadline on
 known routes, that known routes are not forwarded, that unknown routes are
 forwarded and belong to the upstream HTTP backend, the `ERROR` log, and the
