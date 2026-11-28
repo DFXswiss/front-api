@@ -222,7 +222,9 @@ async function main() {
     CACHE_MAX,
     CACHE_PREFIXES,
     cache,
+    DERIVED_GET_PATHS,
     isServedPath,
+    isLocallyFilledPath,
     isKnownLocalRequest,
     isCacheable,
     cacheKey,
@@ -306,13 +308,22 @@ async function main() {
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset', headers: { authorization: '' } })) fail('empty auth GET must not be listed');
   if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset?x=1', headers: {} })) fail('query GET must not be listed');
   if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/asset', headers: {} })) fail('known HEAD');
-  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('known asset id');
-  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) fail('known infoBanner');
+  if (getSwaggerSpec() !== null) fail('no swagger snapshot before the first refresh');
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) {
+    fail('nested_unfillable_forward: nested path without swagger snapshot must not be listed');
+  }
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/setting/infoBanner', headers: {} })) {
+    fail('nested_unfillable_forward: infoBanner without swagger snapshot must not be listed');
+  }
+  if (!isKnownLocalRequest({ method: 'GET', url: '/v1/setting', headers: {} })) fail('listed prefix stays listed without swagger');
   if (!isKnownLocalRequest({ method: 'GET', url: '/v1/statistic/status', headers: {} })) fail('known statistic status');
   if (!isKnownLocalRequest({ method: 'HEAD', url: '/v1/statistic/status', headers: {} })) fail('known statistic status HEAD');
+  if (!DERIVED_GET_PATHS.includes('/v1/statistic/status')) fail('statistic status is a derived listed path');
+  if (!isLocallyFilledPath(undefined)) fail('isLocallyFilledPath undefined is GET /');
+  if (isLocallyFilledPath('/v1/other')) fail('isLocallyFilledPath outside scope');
 
   if (!isCacheable({ method: 'GET', url: '/v1/asset', headers: {} })) fail('cache GET');
-  if (!isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('cache nested id');
+  if (isCacheable({ method: 'GET', url: '/v1/asset/1', headers: {} })) fail('nested path without swagger snapshot is not cacheable');
   if (isCacheable({ method: 'GET', url: '/', headers: {} })) fail('GET / is not JSON cache');
   if (isCacheable({ method: 'HEAD', url: '/', headers: {} })) fail('HEAD / is not JSON cache');
   if (isCacheable({ method: 'GET', url: undefined, headers: {} })) fail('undefined url GET / not cacheable');
@@ -451,7 +462,20 @@ async function main() {
   if (!getSwaggerSpec().paths['/v1/setting/infoBanner'] || !getSwaggerSpec().paths['/v1/asset/{id}']) {
     fail('refreshSwagger must keep listed nested paths and templates');
   }
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/1', headers: {} })) {
+    fail('nested_unfillable_forward: nested path absent from swagger snapshot must not be listed');
+  }
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/asset/{id}', headers: {} })) {
+    fail('nested_unfillable_forward: swagger template must not be listed');
+  }
+  const loadedSwagger = getSwaggerSpec();
+  setSwaggerSpec({ paths: { '/v1/coin/write-only': { post: {} } } });
+  if (isKnownLocalRequest({ method: 'GET', url: '/v1/coin/write-only', headers: {} })) {
+    fail('nested_unfillable_forward: swagger path without GET must not be listed');
+  }
+  setSwaggerSpec(loadedSwagger);
   const refreshPaths = cacheRefreshPaths();
+  if (refreshPaths.includes('/v1/asset/{id}')) fail('cacheRefreshPaths must not fetch swagger templates');
   if (refreshPaths.includes('/')) fail('cacheRefreshPaths must not include GET /');
   if (!refreshPaths.includes('/v1/asset')) fail('cacheRefreshPaths roots');
   if (!refreshPaths.includes('/v1/setting/infoBanner')) fail('cacheRefreshPaths nested');
@@ -675,11 +699,31 @@ async function main() {
     got = await request(port, 'GET', '/v1/other', undefined, undefined, 0);
     if (got.status !== 200 || got.body.indexOf('other') < 0) fail('unknown_forward get body');
     const assetIdBackendRequests = seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length;
-    got = await request(port, 'GET', '/v1/asset/1');
-    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('parameterized GET must be local miss');
-    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length !== assetIdBackendRequests) {
-      fail('parameterized GET must not be forwarded');
+    got = await request(port, 'GET', '/v1/asset/1', undefined, undefined, 0);
+    if (got.body.indexOf('not served') >= 0 || got.headers['x-front-api'] === 'local') {
+      fail('nested_unfillable_forward: nested GET absent from swagger snapshot must not be a local miss');
     }
+    if (got.status !== 404) fail('nested_unfillable_forward: nested GET must return the backend answer');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/asset/1').length !== assetIdBackendRequests + 1) {
+      fail('nested_unfillable_forward: nested GET absent from swagger snapshot must be forwarded');
+    }
+    const snapshotBeforeNoSwagger = getSwaggerSpec();
+    setSwaggerSpec(null);
+    const bannerNoSwaggerSeen = seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting/infoBanner').length;
+    got = await request(port, 'GET', '/v1/setting/infoBanner', undefined, undefined, 0);
+    if (got.status !== 200 || got.body !== '') fail('nested_unfillable_forward: infoBanner without swagger must return the backend answer');
+    if (got.headers['x-front-api'] !== undefined) fail('nested_unfillable_forward: infoBanner without swagger must not be answered locally');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting/infoBanner').length !== bannerNoSwaggerSeen + 1) {
+      fail('nested_unfillable_forward: infoBanner without swagger must reach the backend');
+    }
+    cache.delete('GET /v1/setting');
+    const settingRootSeen = seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting').length;
+    got = await request(port, 'GET', '/v1/setting');
+    if (got.status !== 503 || got.body.indexOf('not served') < 0) fail('listed prefix miss without swagger must stay local 503');
+    if (seen.filter((row) => row.method === 'GET' && row.path === '/v1/setting').length !== settingRootSeen) {
+      fail('listed prefix miss without swagger must not be forwarded');
+    }
+    setSwaggerSpec(snapshotBeforeNoSwagger);
     const statusMissSeen = seen.filter((row) => row.method === 'GET' && row.path === '/v1/statistic/status').length;
     cache.delete('GET /v1/statistic/status');
     got = await request(port, 'GET', '/v1/statistic/status');
